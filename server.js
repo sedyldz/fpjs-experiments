@@ -39,7 +39,6 @@ app.get('/api/events', async (req, res) => {
     const url = `${baseUrl}${endpoint}?${params.toString()}`;
     
     console.log('Fetching events from:', url);
-    console.log('Using API key:', apiKey.substring(0, 10) + '...');
     
     const response = await fetch(url, {
       method: 'GET',
@@ -55,40 +54,39 @@ app.get('/api/events', async (req, res) => {
     
     const data = await response.json();
     
-    // Debug: Log the raw response
-    console.log('Raw API response:', JSON.stringify(data, null, 2));
-    console.log('Data structure:', {
-      hasData: !!data.data,
-      dataLength: data.data?.length,
-      dataKeys: data.data ? Object.keys(data.data[0] || {}) : 'no data'
-    });
+
     
     // Transform the data to match your expected format
-    const transformedEvents = data.events?.map(event => ({
-      visitorId: event.visitorId,
-      ipAddress: event.ipInfo?.v4?.address || event.ip,
-      requestId: event.requestId,
-      date: new Date(event.timestamp),
-      browser: event.browserDetails?.browserName || 'Unknown',
-      os: event.browserDetails?.os || 'Unknown',
-      country: event.ipLocation?.country?.name || 'Unknown',
-      city: event.ipLocation?.city?.name || 'Unknown',
-      confidence: event.confidence?.score || 0,
-      vpnDetected: event.vpn?.result === 'detected',
-      botDetected: event.bot?.result === 'detected',
-      linkedId: event.linkedId || '',
-      url: event.url || '',
-      userAgent: event.userAgent || ''
-    })) || [];
+    const transformedEvents = data.events?.map(event => {
+      const identification = event.products?.identification?.data;
+      const ipInfo = event.products?.ipInfo?.data;
+      const botd = event.products?.botd?.data;
+      const vpn = event.products?.vpn?.data;
+      
+      return {
+        visitorId: identification?.visitorId || 'Unknown',
+        ipAddress: ipInfo?.v4?.address || identification?.ip || 'Unknown',
+        requestId: identification?.requestId || 'Unknown',
+        date: identification?.timestamp ? new Date(identification.timestamp) : new Date(),
+        browser: identification?.browserDetails?.browserName || 'Unknown',
+        os: identification?.browserDetails?.os || 'Unknown',
+        country: ipInfo?.v4?.geolocation?.country?.name || 'Unknown',
+        city: ipInfo?.v4?.geolocation?.city?.name || 'Unknown',
+        confidence: identification?.confidence?.score || 0,
+        vpnDetected: vpn?.result === true,
+        botDetected: botd?.bot?.result === 'bad',
+        linkedId: identification?.linkedId || '',
+        url: identification?.url || '',
+        userAgent: identification?.userAgent || ''
+      };
+    }) || [];
     
-    // Debug: Log the transformed data
-    console.log('Transformed events:', transformedEvents.length, 'events');
-    console.log('First transformed event:', transformedEvents[0]);
+
     
     res.json({
       success: true,
       data: transformedEvents,
-      total: data.data?.length || 0
+      total: data.events?.length || 0
     });
     
   } catch (error) {

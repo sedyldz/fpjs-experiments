@@ -48,7 +48,7 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
     {
       id: '1',
       type: 'ai',
-      content: `Hello! I'm your FingerprintJS AI analytics assistant. I can analyze your ${csvData.length} identification events and help you understand visitor patterns, security insights, and geographic distribution. Try asking me about visitor activity, browser analysis, geographic data, or security threats!`,
+      content: `Hello! I'm your FingerprintJS AI analytics assistant. I can analyze your identification events and help you understand visitor patterns, security insights, and geographic distribution. Try asking me about visitor activity, browser analysis, geographic data, or security threats!`,
       timestamp: new Date()
     }
   ]);

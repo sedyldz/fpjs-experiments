@@ -11,7 +11,7 @@ interface CSVEvent {
   visitorId: string;
   ipAddress: string;
   requestId: string;
-  date: Date;
+  date: Date | string;
   browser: string;
   os: string;
   country: string;
@@ -46,7 +46,7 @@ export function AnalyticsTable({ csvData, onOpenAIChat }: AnalyticsTableProps) {
       
       let matchesDate = true;
       if (dateFilter !== 'all') {
-        const eventDate = event.date.toISOString().split('T')[0];
+        const eventDate = new Date(event.date).toISOString().split('T')[0];
         const today = new Date().toISOString().split('T')[0];
         const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         
@@ -73,7 +73,7 @@ export function AnalyticsTable({ csvData, onOpenAIChat }: AnalyticsTableProps) {
       let comparison = 0;
       
       if (sortBy === 'date') {
-        comparison = a.date.getTime() - b.date.getTime();
+        comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
       } else if (sortBy === 'visitorId') {
         comparison = a.visitorId.localeCompare(b.visitorId);
       } else if (sortBy === 'ipAddress') {
@@ -198,7 +198,7 @@ export function AnalyticsTable({ csvData, onOpenAIChat }: AnalyticsTableProps) {
                   <path d="M8 12h8"/>
                   <path d="M12 8v8"/>
                 </svg>
-                Ask AI
+                Analyze with AI
               </Button>
               <Button variant="outline" size="sm">
                 <Download className="h-4 w-4 mr-2" />
@@ -342,12 +342,12 @@ export function AnalyticsTable({ csvData, onOpenAIChat }: AnalyticsTableProps) {
                       {getSecurityBadge(event)}
                     </TableCell>
                     <TableCell className="text-sm">
-                      {event.date.toLocaleDateString('en-US', {
+                      {new Date(event.date).toLocaleDateString('en-US', {
                         month: '2-digit',
                         day: '2-digit',
                         year: 'numeric'
                       })}{' '}
-                      {event.date.toLocaleTimeString('en-US', {
+                      {new Date(event.date).toLocaleTimeString('en-US', {
                         hour12: false,
                         hour: '2-digit',
                         minute: '2-digit'
