@@ -26,7 +26,7 @@ app.get('/api/events', async (req, res) => {
     }
     
     // Construct the FingerprintJS API URL (Global region for US)
-    const baseUrl = 'https://api.fpjs.io';
+    const baseUrl = 'https://api.stage.fpjs.sh';
     const endpoint = '/events/search';
     
     const params = new URLSearchParams({
@@ -55,8 +55,16 @@ app.get('/api/events', async (req, res) => {
     
     const data = await response.json();
     
+    // Debug: Log the raw response
+    console.log('Raw API response:', JSON.stringify(data, null, 2));
+    console.log('Data structure:', {
+      hasData: !!data.data,
+      dataLength: data.data?.length,
+      dataKeys: data.data ? Object.keys(data.data[0] || {}) : 'no data'
+    });
+    
     // Transform the data to match your expected format
-    const transformedEvents = data.data?.map(event => ({
+    const transformedEvents = data.events?.map(event => ({
       visitorId: event.visitorId,
       ipAddress: event.ipInfo?.v4?.address || event.ip,
       requestId: event.requestId,
@@ -72,6 +80,10 @@ app.get('/api/events', async (req, res) => {
       url: event.url || '',
       userAgent: event.userAgent || ''
     })) || [];
+    
+    // Debug: Log the transformed data
+    console.log('Transformed events:', transformedEvents.length, 'events');
+    console.log('First transformed event:', transformedEvents[0]);
     
     res.json({
       success: true,
