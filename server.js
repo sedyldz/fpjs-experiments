@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import aiService from './src/services/aiService.js';
 
 dotenv.config();
 
@@ -98,18 +99,122 @@ app.get('/api/events', async (req, res) => {
   }
 });
 
+// AI Analysis endpoint
+app.post('/api/ai/analyze', async (req, res) => {
+  try {
+    const { question, csvData } = req.body;
+    
+    if (!question) {
+      return res.status(400).json({
+        success: false,
+        error: 'Question is required'
+      });
+    }
+    
+    if (!csvData || !Array.isArray(csvData) || csvData.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'CSV data is required and must be a non-empty array'
+      });
+    }
+    
+    console.log(`AI Analysis requested for question: "${question}" with ${csvData.length} data points`);
+    
+    // Perform AI analysis
+    const analysis = await aiService.analyzeData(csvData, question);
+    
+    // Generate chart data
+    const chartData = await aiService.generateChartData(csvData, question);
+    
+    res.json({
+      success: true,
+      answer: analysis.answer || analysis.fallbackAnswer,
+      chart: chartData,
+      isFallback: !analysis.success,
+      provider: analysis.provider,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('AI Analysis error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      fallbackAnswer: 'I apologize, but I encountered an error while analyzing your data. Please try rephrasing your question or check your data format.',
+      provider: 'fallback'
+    });
+  }
+});
+
+// AI Status endpoint
+app.get('/api/ai/status', (req, res) => {
+  const aiStatus = aiService.getStatus();
+  res.json({
+    success: true,
+    ...aiStatus,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Debug endpoint to test AI service
+app.get('/api/ai/debug', (req, res) => {
+  res.json({
+    success: true,
+    environment: {
+      AI_PROVIDER: process.env.AI_PROVIDER,
+      OLLAMA_HOST: process.env.OLLAMA_HOST,
+      OLLAMA_MODEL: process.env.OLLAMA_MODEL,
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY ? 'SET' : 'NOT SET'
+    },
+    aiService: aiService.getStatus(),
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Test Ollama endpoint
+app.get('/api/ai/test-ollama', async (req, res) => {
+  try {
+    const result = await aiService.testOllama();
+    res.json({
+      success: true,
+      result: result,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
+  const aiStatus = aiService.getStatus();
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    apiKey: process.env.FP_SECRET_KEY ? '***' : 'NOT SET'
+    apiKey: process.env.FP_SECRET_KEY ? '***' : 'NOT SET',
+    ai: {
+      provider: aiStatus.provider,
+      isAvailable: aiStatus.isAvailable,
+      model: aiStatus.model
+    },
+    env: {
+      AI_PROVIDER: process.env.AI_PROVIDER,
+      OLLAMA_HOST: process.env.OLLAMA_HOST,
+      OLLAMA_MODEL: process.env.OLLAMA_MODEL
+    }
   });
 });
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   console.log('Environment variables loaded:', {
-    FP_SECRET_KEY: process.env.FP_SECRET_KEY ? '***' : 'NOT SET'
+    FP_SECRET_KEY: process.env.FP_SECRET_KEY ? '***' : 'NOT SET',
+    AI_PROVIDER: process.env.AI_PROVIDER || 'fallback',
+    OLLAMA_HOST: process.env.OLLAMA_HOST || 'NOT SET',
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY ? '***' : 'NOT SET'
   });
 });

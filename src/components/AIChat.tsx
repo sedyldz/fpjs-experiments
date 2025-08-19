@@ -3,7 +3,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { MessageCircle, Send, X, BarChart3, PieChart, TrendingUp, Globe, Shield, Monitor } from 'lucide-react';
+import { MessageCircle, Send, X, BarChart3, PieChart, TrendingUp, Globe, Shield, Monitor, Brain, AlertCircle, Server, Cloud } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, PieChart as RechartsPieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface CSVEvent {
@@ -33,6 +33,8 @@ interface ChatMessage {
     title: string;
   };
   timestamp: Date;
+  isFallback?: boolean;
+  provider?: string;
 }
 
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#8dd1e1', '#d084d0', '#ff6b6b', '#4ecdc4'];
@@ -48,12 +50,21 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
     {
       id: '1',
       type: 'ai',
-      content: `Hello! I'm your FingerprintJS AI analytics assistant. I can analyze your identification events and help you understand visitor patterns, security insights, and geographic distribution. Try asking me about visitor activity, browser analysis, geographic data, or security threats!`,
+      content: `Hello! I'm your FingerprintJS AI analytics assistant. I can analyze your identification events and provide deep insights into visitor patterns, security threats, geographic distribution, and more. Ask me anything about your data!`,
       timestamp: new Date()
     }
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [aiStatus, setAiStatus] = useState<{
+    provider: string;
+    isAvailable: boolean;
+    model: string;
+  }>({
+    provider: 'fallback',
+    isAvailable: false,
+    model: 'none'
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -64,178 +75,131 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
     scrollToBottom();
   }, [messages]);
 
-  const generateChartData = (question: string) => {
-    const lowerQuestion = question.toLowerCase();
+  // Check AI availability on component mount
+  useEffect(() => {
+    checkAIStatus();
+  }, []);
 
-    // Visitor activity analysis
-    if (lowerQuestion.includes('visitor') || lowerQuestion.includes('activity') || lowerQuestion.includes('patterns')) {
-      const visitorCounts = csvData.reduce((acc, event) => {
-        acc[event.visitorId] = (acc[event.visitorId] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-
-      return {
-        type: 'bar' as const,
-        data: Object.entries(visitorCounts)
-          .sort(([,a], [,b]) => b - a)
-          .slice(0, 10)
-          .map(([visitorId, count]) => ({ 
-            visitor: visitorId.slice(0, 8) + '...', 
-            requests: count 
-          })),
-        title: 'Top 10 Visitors by Request Count'
-      };
+  const checkAIStatus = async () => {
+    try {
+      const response = await fetch('/api/ai/status');
+      const data = await response.json();
+      if (data.success) {
+        setAiStatus({
+          provider: data.provider,
+          isAvailable: data.isAvailable,
+          model: data.model
+        });
+      }
+    } catch (error) {
+      console.error('Error checking AI status:', error);
+      setAiStatus({
+        provider: 'fallback',
+        isAvailable: false,
+        model: 'none'
+      });
     }
-
-    // Geographic analysis
-    if (lowerQuestion.includes('location') || lowerQuestion.includes('country') || lowerQuestion.includes('city') || lowerQuestion.includes('geographic')) {
-      const countryCounts = csvData.reduce((acc, event) => {
-        const country = event.country || 'Unknown';
-        acc[country] = (acc[country] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-
-      return {
-        type: 'pie' as const,
-        data: Object.entries(countryCounts)
-          .sort(([,a], [,b]) => b - a)
-          .slice(0, 8)
-          .map(([name, value]) => ({ name, value })),
-        title: 'Requests by Country'
-      };
-    }
-
-    // Browser analysis
-    if (lowerQuestion.includes('browser') || lowerQuestion.includes('chrome') || lowerQuestion.includes('safari') || lowerQuestion.includes('firefox')) {
-      const browserCounts = csvData.reduce((acc, event) => {
-        const browser = event.browser || 'Unknown';
-        acc[browser] = (acc[browser] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-
-      return {
-        type: 'bar' as const,
-        data: Object.entries(browserCounts)
-          .sort(([,a], [,b]) => b - a)
-          .map(([browser, count]) => ({ browser, requests: count })),
-        title: 'Browser Distribution'
-      };
-    }
-
-    // Operating system analysis
-    if (lowerQuestion.includes('os') || lowerQuestion.includes('operating system') || lowerQuestion.includes('mac') || lowerQuestion.includes('windows')) {
-      const osCounts = csvData.reduce((acc, event) => {
-        const os = event.os || 'Unknown';
-        acc[os] = (acc[os] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-
-      return {
-        type: 'pie' as const,
-        data: Object.entries(osCounts)
-          .sort(([,a], [,b]) => b - a)
-          .map(([name, value]) => ({ name, value })),
-        title: 'Operating System Distribution'
-      };
-    }
-
-    // Security analysis
-    if (lowerQuestion.includes('security') || lowerQuestion.includes('vpn') || lowerQuestion.includes('bot') || lowerQuestion.includes('threat') || lowerQuestion.includes('suspicious')) {
-      const securityData = [
-        { name: 'VPN Detected', value: csvData.filter(e => e.vpnDetected).length },
-        { name: 'Bot Detected', value: csvData.filter(e => e.botDetected).length },
-        { name: 'Clean Requests', value: csvData.filter(e => !e.vpnDetected && !e.botDetected).length }
-      ];
-
-      return {
-        type: 'pie' as const,
-        data: securityData.filter(item => item.value > 0),
-        title: 'Security Threat Analysis'
-      };
-    }
-
-    // Time-based analysis
-    if (lowerQuestion.includes('time') || lowerQuestion.includes('hour') || lowerQuestion.includes('when') || lowerQuestion.includes('timeline')) {
-      const hourlyData = csvData.reduce((acc, event) => {
-        const hour = event.date.getHours();
-        const hourLabel = `${hour.toString().padStart(2, '0')}:00`;
-        acc[hourLabel] = (acc[hourLabel] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-
-      return {
-        type: 'line' as const,
-        data: Object.entries(hourlyData)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([hour, count]) => ({ hour, requests: count })),
-        title: 'Hourly Request Activity'
-      };
-    }
-
-    // IP address analysis
-    if (lowerQuestion.includes('ip') || lowerQuestion.includes('address')) {
-      const ipCounts = csvData.reduce((acc, event) => {
-        acc[event.ipAddress] = (acc[event.ipAddress] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-
-      return {
-        type: 'bar' as const,
-        data: Object.entries(ipCounts)
-          .sort(([,a], [,b]) => b - a)
-          .slice(0, 8)
-          .map(([ip, count]) => ({ ip: ip.slice(0, 12) + '...', requests: count })),
-        title: 'Top IP Addresses by Request Count'
-      };
-    }
-
-    // Confidence score analysis
-    if (lowerQuestion.includes('confidence') || lowerQuestion.includes('score') || lowerQuestion.includes('accuracy')) {
-      const confidenceRanges = csvData.reduce((acc, event) => {
-        const score = event.confidence;
-        let range = '';
-        if (score >= 0.9) range = '90-100%';
-        else if (score >= 0.8) range = '80-89%';
-        else if (score >= 0.7) range = '70-79%';
-        else if (score >= 0.6) range = '60-69%';
-        else range = 'Below 60%';
-        acc[range] = (acc[range] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-
-      return {
-        type: 'bar' as const,
-        data: Object.entries(confidenceRanges)
-          .sort(([a], [b]) => {
-            const aNum = parseInt(a.split('-')[0]);
-            const bNum = parseInt(b.split('-')[0]);
-            return bNum - aNum;
-          })
-          .map(([range, count]) => ({ range, requests: count })),
-        title: 'Confidence Score Distribution'
-      };
-    }
-
-    // Default: visitor distribution
-    const visitorCounts = csvData.reduce((acc, event) => {
-      acc[event.visitorId] = (acc[event.visitorId] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-
-    return {
-      type: 'pie' as const,
-      data: Object.entries(visitorCounts)
-        .sort(([,a], [,b]) => b - a)
-        .slice(0, 6)
-        .map(([name, value]) => ({ 
-          name: name.slice(0, 8) + '...', 
-          value 
-        })),
-      title: 'Top Visitors by Request Count'
-    };
   };
 
-  const generateAIResponse = (question: string) => {
+  const getProviderIcon = (provider: string) => {
+    switch (provider) {
+      case 'ollama':
+        return <Server className="h-3 w-3 text-green-600" />;
+      case 'openai':
+        return <Cloud className="h-3 w-3 text-blue-600" />;
+      default:
+        return <AlertCircle className="h-3 w-3 text-yellow-600" />;
+    }
+  };
+
+  const getProviderLabel = (provider: string) => {
+    switch (provider) {
+      case 'ollama':
+        return 'Local AI';
+      case 'openai':
+        return 'ChatGPT';
+      default:
+        return 'Fallback';
+    }
+  };
+
+  const handleSendMessage = async () => {
+    if (!inputValue.trim()) return;
+
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      type: 'user',
+      content: inputValue,
+      timestamp: new Date()
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInputValue('');
+    setIsTyping(true);
+
+    try {
+      // Call the AI analysis endpoint
+      const response = await fetch('http://localhost:3001/api/ai/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          question: inputValue,
+          csvData: csvData
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        const aiMessage: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          type: 'ai',
+          content: result.answer,
+          chart: result.chart,
+          timestamp: new Date(),
+          isFallback: result.isFallback,
+          provider: result.provider
+        };
+
+        setMessages(prev => [...prev, aiMessage]);
+      } else {
+        // Handle error with fallback response
+        const fallbackMessage: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          type: 'ai',
+          content: result.fallbackAnswer || 'I apologize, but I encountered an error while analyzing your data. Please try rephrasing your question.',
+          timestamp: new Date(),
+          isFallback: true,
+          provider: 'fallback'
+        };
+
+        setMessages(prev => [...prev, fallbackMessage]);
+      }
+    } catch (error) {
+      console.error('Error calling AI service:', error);
+      
+      // Generate fallback response
+      const fallbackResponse = generateFallbackResponse(inputValue);
+      const fallbackMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        type: 'ai',
+        content: fallbackResponse,
+        chart: generateFallbackChart(inputValue),
+        timestamp: new Date(),
+        isFallback: true,
+        provider: 'fallback'
+      };
+
+      setMessages(prev => [...prev, fallbackMessage]);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  // Fallback response generator for when AI is unavailable
+  const generateFallbackResponse = (question: string) => {
     const lowerQuestion = question.toLowerCase();
     
     const totalEvents = csvData.length;
@@ -265,71 +229,68 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
       return `Geographic analysis shows activity from ${uniqueCountries} countries across ${uniqueIPs} unique IP addresses. The majority of requests (${topCountry[1]} events) come from ${topCountry[0]}. This geographic distribution helps identify your user base and detect unusual access patterns.`;
     }
     
-    if (lowerQuestion.includes('browser') || lowerQuestion.includes('chrome') || lowerQuestion.includes('safari')) {
-      const topBrowser = Object.entries(csvData.reduce((acc, event) => {
-        const browser = event.browser || 'Unknown';
-        acc[browser] = (acc[browser] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>)).sort(([,a], [,b]) => b - a)[0];
-      
-      return `Browser analysis reveals that ${topBrowser[0]} is the most popular browser with ${topBrowser[1]} requests (${((topBrowser[1] / totalEvents) * 100).toFixed(1)}% of total). This browser distribution helps optimize your application for your most common user base.`;
-    }
-    
     if (lowerQuestion.includes('security') || lowerQuestion.includes('vpn') || lowerQuestion.includes('threat')) {
       const threatPercentage = ((vpnDetected + botDetected) / totalEvents * 100).toFixed(1);
       return `Security analysis shows ${vpnDetected} VPN connections and ${botDetected} bot detections out of ${totalEvents} total events (${threatPercentage}% potential threats). The average confidence score is ${avgConfidence.toFixed(2)}, indicating ${avgConfidence > 0.8 ? 'high' : avgConfidence > 0.6 ? 'moderate' : 'low'} identification accuracy.`;
     }
     
-    if (lowerQuestion.includes('time') || lowerQuestion.includes('hour') || lowerQuestion.includes('when')) {
-      const timeRange = csvData.reduce((acc, event) => {
-        acc.min = Math.min(acc.min, event.date.getHours());
-        acc.max = Math.max(acc.max, event.date.getHours());
-        return acc;
-      }, { min: 23, max: 0 });
-      
-      return `Activity occurs between ${timeRange.min.toString().padStart(2, '0')}:00 and ${timeRange.max.toString().padStart(2, '0')}:00. This temporal pattern helps identify peak usage hours and can assist in detecting unusual access patterns outside normal business hours.`;
-    }
-    
-    if (lowerQuestion.includes('confidence') || lowerQuestion.includes('score')) {
-      const highConfidence = csvData.filter(e => e.confidence >= 0.8).length;
-      const highConfidencePercent = ((highConfidence / totalEvents) * 100).toFixed(1);
-      
-      return `Confidence score analysis shows ${highConfidence} events (${highConfidencePercent}%) with high confidence (≥80%). The average confidence score is ${avgConfidence.toFixed(2)}, indicating ${avgConfidence > 0.8 ? 'excellent' : avgConfidence > 0.6 ? 'good' : 'moderate'} identification accuracy across your dataset.`;
-    }
-    
     return `I've analyzed your FingerprintJS dataset with ${totalEvents} identification events. Key insights: ${uniqueVisitors} unique visitors, ${uniqueIPs} IP addresses, ${uniqueCountries} countries, ${vpnDetected} VPN detections, and ${botDetected} bot detections. The average confidence score is ${avgConfidence.toFixed(2)}. This data provides comprehensive visitor tracking and security insights for your application.`;
   };
 
-  const handleSendMessage = async () => {
-    if (!inputValue.trim()) return;
+  // Fallback chart generator
+  const generateFallbackChart = (question: string) => {
+    const lowerQuestion = question.toLowerCase();
 
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      type: 'user',
-      content: inputValue,
-      timestamp: new Date()
-    };
+    if (lowerQuestion.includes('visitor') || lowerQuestion.includes('activity')) {
+      const visitorCounts = csvData.reduce((acc, event) => {
+        acc[event.visitorId] = (acc[event.visitorId] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
 
-    setMessages(prev => [...prev, userMessage]);
-    setInputValue('');
-    setIsTyping(true);
-
-    // Simulate AI processing time
-    setTimeout(() => {
-      const chartData = generateChartData(inputValue);
-      const aiResponse = generateAIResponse(inputValue);
-
-      const aiMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        type: 'ai',
-        content: aiResponse,
-        chart: chartData,
-        timestamp: new Date()
+      return {
+        type: 'bar' as const,
+        data: Object.entries(visitorCounts)
+          .sort(([,a], [,b]) => b - a)
+          .slice(0, 10)
+          .map(([visitorId, count]) => ({ 
+            visitor: visitorId.slice(0, 8) + '...', 
+            requests: count 
+          })),
+        title: 'Top 10 Visitors by Request Count'
       };
+    }
 
-      setMessages(prev => [...prev, aiMessage]);
-      setIsTyping(false);
-    }, 1500);
+    if (lowerQuestion.includes('security') || lowerQuestion.includes('threat')) {
+      const securityData = [
+        { name: 'VPN Detected', value: csvData.filter(e => e.vpnDetected).length },
+        { name: 'Bot Detected', value: csvData.filter(e => e.botDetected).length },
+        { name: 'Clean Requests', value: csvData.filter(e => !e.vpnDetected && !e.botDetected).length }
+      ];
+
+      return {
+        type: 'pie' as const,
+        data: securityData.filter(item => item.value > 0),
+        title: 'Security Threat Analysis'
+      };
+    }
+
+    // Default chart
+    const visitorCounts = csvData.reduce((acc, event) => {
+      acc[event.visitorId] = (acc[event.visitorId] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    return {
+      type: 'bar' as const,
+      data: Object.entries(visitorCounts)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 8)
+        .map(([visitorId, count]) => ({ 
+          visitor: visitorId.slice(0, 8) + '...', 
+          requests: count 
+        })),
+      title: 'Visitor Activity Overview'
+    };
   };
 
   const renderChart = (chart: ChatMessage['chart']) => {
@@ -410,14 +371,25 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
       <Card className="h-full rounded-none border-0">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
           <CardTitle className="flex items-center gap-2">
-            <MessageCircle className="h-5 w-5" />
-            FingerprintJS AI Assistant
+            <Brain className="h-5 w-5" />
+            AI Analytics Assistant
           </CardTitle>
           <Button variant="ghost" size="sm" onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
         </CardHeader>
         <CardContent className="flex flex-col h-[calc(100vh-5rem)]">
+          <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+            <div className="flex items-center gap-2 text-gray-800">
+              {getProviderIcon(aiStatus.provider)}
+              <span className="text-sm font-medium">
+                {getProviderLabel(aiStatus.provider)} {aiStatus.isAvailable ? '(Active)' : '(Unavailable)'}
+              </span>
+            </div>
+            <p className="text-xs text-gray-600 mt-1">
+              Model: {aiStatus.model} | Provider: {aiStatus.provider}
+            </p>
+          </div>
           <div className="flex-1 pr-4 overflow-auto">
             <div className="space-y-4">
               {messages.map((message) => (
@@ -432,6 +404,16 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
                         : 'bg-muted text-muted-foreground'
                     }`}
                   >
+                    <div className="flex items-center gap-2 mb-2">
+                      {message.type === 'ai' && (
+                        <>
+                          {message.provider && getProviderIcon(message.provider)}
+                          <span className="text-xs opacity-70">
+                            {getProviderLabel(message.provider || 'fallback')}
+                          </span>
+                        </>
+                      )}
+                    </div>
                     <p className="text-sm">{message.content}</p>
                     {message.chart && renderChart(message.chart)}
                     <div className="text-xs opacity-70 mt-2">
@@ -443,10 +425,13 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
               {isTyping && (
                 <div className="flex justify-start">
                   <div className="bg-muted text-muted-foreground p-3 rounded-lg">
-                    <div className="flex items-center gap-1">
-                      <div className="w-2 h-2 bg-current rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                      <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                    <div className="flex items-center gap-2">
+                      <Brain className="h-3 w-3 animate-pulse" />
+                      <div className="flex items-center gap-1">
+                        <div className="w-2 h-2 bg-current rounded-full animate-bounce"></div>
+                        <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                        <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -470,7 +455,7 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
             <Badge 
               variant="secondary" 
               className="cursor-pointer text-xs" 
-              onClick={() => setInputValue("Show me visitor activity patterns")}
+              onClick={() => setInputValue("Analyze visitor activity patterns and identify unusual behavior")}
             >
               <Monitor className="h-3 w-3 mr-1" />
               Visitors
@@ -478,15 +463,7 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
             <Badge 
               variant="secondary" 
               className="cursor-pointer text-xs"
-              onClick={() => setInputValue("Analyze geographic distribution")}
-            >
-              <Globe className="h-3 w-3 mr-1" />
-              Geography
-            </Badge>
-            <Badge 
-              variant="secondary" 
-              className="cursor-pointer text-xs"
-              onClick={() => setInputValue("Show security threats and VPN usage")}
+              onClick={() => setInputValue("What are the security threats in my data and how should I address them?")}
             >
               <Shield className="h-3 w-3 mr-1" />
               Security
@@ -494,7 +471,15 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
             <Badge 
               variant="secondary" 
               className="cursor-pointer text-xs"
-              onClick={() => setInputValue("Analyze browser and device distribution")}
+              onClick={() => setInputValue("Analyze geographic distribution and identify potential fraud patterns")}
+            >
+              <Globe className="h-3 w-3 mr-1" />
+              Geography
+            </Badge>
+            <Badge 
+              variant="secondary" 
+              className="cursor-pointer text-xs"
+              onClick={() => setInputValue("What insights can you provide about browser and device usage patterns?")}
             >
               <BarChart3 className="h-3 w-3 mr-1" />
               Browsers
