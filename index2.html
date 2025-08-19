@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vite App</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+    <script>
+        // Initialize the agent on page load.
+        const fpPromise = import('https://fpjscdn.net/v3/igNufJvG2jpyTAGgizLz')
+          .then(FingerprintJS => FingerprintJS.load())
+      
+        // Get the visitorId when you need it.
+        fpPromise
+          .then(fp => fp.get())
+          .then(result => {
+            const visitorId = result.visitorId
+            console.log(visitorId, 'visitorId')
+            requestId = result.requestId
+            console.log(requestId, 'requestId')
+          })
+
+
+
+
+  // Pass your own data to get()
+  fpPromise
+    .then(fp => fp.get({
+      linkedId: "accountNum12345",
+      tag: {
+        orders: ["orderNum6789"],
+      	location: { city: "Atlanta", country: "US" }
+      } 
+  	}))
+    .then(result => console.log(result.visitorId));
+
+
+
+
+    </script>
+
+
+    
+    
+  </body>
+</html>

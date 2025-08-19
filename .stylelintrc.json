@@ -1,0 +1,28 @@
+{
+  "rules": {
+    "selector-class-pattern": "^[a-z][a-zA-Z0-9]+$",
+    "selector-pseudo-class-no-unknown": [
+      true,
+      {
+        "ignorePseudoClasses": ["global"]
+      }
+    ],
+    "scss/no-global-function-names": null,
+    "scss/load-partial-extension": "always",
+    "at-rule-allowed-list": [
+      "import",
+      "include",
+      "media",
+      "apply",
+      "else",
+      "if",
+      "keyframes",
+      "layer",
+      "mixin",
+      "use",
+      "warn",
+      "tailwind"
+    ]
+  },
+  "extends": ["stylelint-config-standard-scss", "stylelint-config-prettier-scss", "stylelint-config-idiomatic-order"]
+}

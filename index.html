@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vite App</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Initialize the agent at application startup.
+      const fpPromise = import(
+        "https://procdn.fpjs.sh/v3/FoIXwsnRDd3ad0zJWfUV"
+      ).then((FingerprintJS) =>
+        FingerprintJS.load({
+          apiKey: "FoIXwsnRDd3ad0zJWfUV",
+          endpoint: "https://api.stage.fpjs.sh",
+        })
+      );
+      // Get the visitor identifier when you need it.
+      fpPromise
+        .then((fp) => fp.get())
+        .then((result) => {
+          const visitorId = result.visitorId;
+          const requestId = result.requestId;
+          console.log(visitorId, "visitorId");
+          console.log(requestId, "requestId");
+        });
+
+      fpPromise
+        .then((fp) =>
+          fp.get({
+            linkedId: "accountNum12345",
+            tag: {
+              loginAttempts24h: 8,
+            },
+          })
+        )
+        .then((result) => console.log(result.requestId));
+        
+    </script>
+  </body>
+</html>
