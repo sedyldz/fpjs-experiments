@@ -322,6 +322,36 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Smart Insight API endpoint
+app.post('/api/smart-insight', async (req, res) => {
+  try {
+    const { events } = req.body;
+    
+    if (!events || !Array.isArray(events)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid events data provided'
+      });
+    }
+
+    // Generate smart insight using the AI service
+    const result = await aiService.generateSmartInsight(events);
+    
+    res.json({
+      success: true,
+      insight: result.insight,
+      error: result.error
+    });
+    
+  } catch (error) {
+    console.error('Error generating smart insight:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to generate smart insight'
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   console.log('Environment variables loaded:', {

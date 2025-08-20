@@ -23,7 +23,6 @@ import {
   Lightbulb,
   RefreshCw
 } from 'lucide-react';
-import AIService from '../services/aiService';
 
 interface FingerprintEvent {
   visitorId: string;
@@ -51,6 +50,48 @@ export function Overview({ events }: OverviewProps) {
   const [timeGranularity, setTimeGranularity] = useState<'hourly' | 'daily' | 'monthly'>('daily');
   const [environment, setEnvironment] = useState('Any environment');
   const [dateRange, setDateRange] = useState('Last 7 days');
+  const [smartInsight, setSmartInsight] = useState<string>('');
+  const [insightLoading, setInsightLoading] = useState<boolean>(false);
+  const [insightError, setInsightError] = useState<string | null>(null);
+
+  // Generate smart insight when component loads
+  useEffect(() => {
+    const generateInsight = async () => {
+      if (events.length > 0) {
+        setInsightLoading(true);
+        setInsightError(null);
+        
+        try {
+          const response = await fetch('http://localhost:3001/api/smart-insight', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ events: events.slice(-100) }) // Send last 100 events
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Server error: ${response.status}`);
+          }
+          
+          const result = await response.json();
+          
+          if (result.success) {
+            setSmartInsight(result.insight);
+          } else {
+            setInsightError(result.error || 'Failed to generate insight');
+          }
+        } catch (error) {
+          console.error('Error generating smart insight:', error);
+          setInsightError(error instanceof Error ? error.message : 'Unknown error');
+        } finally {
+          setInsightLoading(false);
+        }
+      }
+    };
+
+    generateInsight();
+  }, [events]);
 
   // Calculate insights from events data
   const totalUsage = events.length;
@@ -137,6 +178,81 @@ export function Overview({ events }: OverviewProps) {
       {/* Page Header */}
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Overview</h1>
+      </div>
+
+      {/* Smart Insight Section */}
+      <div className="mb-8">
+        <Card className="border-l-4 border-l-blue-500">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Lightbulb className="h-5 w-5 text-blue-500" />
+                <CardTitle className="text-lg font-semibold text-gray-900">AI Smart Insight</CardTitle>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  setInsightLoading(true);
+                  setInsightError(null);
+                  
+                  try {
+                    const response = await fetch('http://localhost:3001/api/smart-insight', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({ events: events.slice(-100) })
+                    });
+                    
+                    if (!response.ok) {
+                      throw new Error(`Server error: ${response.status}`);
+                    }
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                      setSmartInsight(result.insight);
+                    } else {
+                      setInsightError(result.error || 'Failed to generate insight');
+                    }
+                  } catch (error) {
+                    console.error('Error generating smart insight:', error);
+                    setInsightError(error instanceof Error ? error.message : 'Unknown error');
+                  } finally {
+                    setInsightLoading(false);
+                  }
+                }}
+                disabled={insightLoading}
+                className="flex items-center space-x-1"
+              >
+                <RefreshCw className={`h-4 w-4 ${insightLoading ? 'animate-spin' : ''}`} />
+                <span>Refresh</span>
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {insightLoading ? (
+              <div className="flex items-center space-x-2 text-gray-600">
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                <span>Generating AI insight...</span>
+              </div>
+            ) : insightError ? (
+              <div className="text-red-600 bg-red-50 p-3 rounded-md">
+                <div className="font-medium">Error generating insight:</div>
+                <div className="text-sm">{insightError}</div>
+              </div>
+            ) : smartInsight ? (
+              <div className="text-gray-700 leading-relaxed">
+                {smartInsight}
+              </div>
+            ) : (
+              <div className="text-gray-500 italic">
+                No insight available. Click refresh to generate a new insight.
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* Subscription Overview */}
