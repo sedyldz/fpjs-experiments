@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { AIChat } from './components/AIChat';
+import { Overview } from './components/Overview';
+import { Identification } from './components/Identification';
 import { Button } from './components/ui/button';
 import { 
   Compass, 
@@ -13,10 +15,6 @@ import {
   Puzzle, 
   FileBarChart, 
   Settings,
-  Filter,
-  Calendar,
-  Download,
-  Copy,
   ChevronDown,
 } from 'lucide-react';
 
@@ -43,6 +41,7 @@ function App() {
   const [events, setEvents] = useState<FingerprintEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState<'overview' | 'identification'>('overview');
 
   useEffect(() => {
     // Fetch live events from our server-side API
@@ -77,8 +76,8 @@ function App() {
 
   const navigationItems = [
     { icon: Compass, label: 'Get started', active: false },
-    { icon: Home, label: 'Overview', active: false },
-    { icon: FileText, label: 'Identification', active: true },
+    { icon: Home, label: 'Overview', active: currentPage === 'overview' },
+    { icon: FileText, label: 'Identification', active: currentPage === 'identification' },
     { icon: Zap, label: 'Smart Signals', active: false },
     { icon: Key, label: 'API keys', active: false },
     { icon: Heart, label: 'Health', active: false },
@@ -89,21 +88,7 @@ function App() {
     { icon: Settings, label: 'Settings', active: false },
   ];
 
-  const getCountryFlag = (country: string) => {
-    const flagMap: { [key: string]: string } = {
-      'United States': '🇺🇸',
-      'Germany': '🇩🇪',
-      'Sweden': '🇸🇪',
-      'Turkey': '🇹🇷',
-      'United Kingdom': '🇬🇧',
-      'Canada': '🇨🇦',
-      'France': '🇫🇷',
-      'Netherlands': '🇳🇱',
-      'Australia': '🇦🇺',
-      'Japan': '🇯🇵',
-    };
-    return flagMap[country] || '🌍';
-  };
+
 
   if (loading) {
     return (
@@ -154,9 +139,12 @@ function App() {
               const Icon = item.icon;
               return (
                 <li key={item.label}>
-                  <a
-                    href="#"
-                    className={`flex items-center px-3 py-2 text-sm rounded-md transition-colors ${
+                  <button
+                    onClick={() => {
+                      if (item.label === 'Overview') setCurrentPage('overview');
+                      if (item.label === 'Identification') setCurrentPage('identification');
+                    }}
+                    className={`w-full flex items-center px-3 py-2 text-sm rounded-md transition-colors ${
                       item.active
                         ? 'bg-gray-100 text-gray-900 font-medium'
                         : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
@@ -164,7 +152,7 @@ function App() {
                   >
                     <Icon className={`h-4 w-4 mr-3 ${item.active ? 'text-gray-900' : 'text-gray-500'}`} />
                     {item.label}
-                  </a>
+                  </button>
                 </li>
               );
             })}
@@ -189,112 +177,11 @@ function App() {
 
         {/* Main Content Area */}
         <main className="flex-1 bg-white p-6 overflow-auto">
-          <div className="max-w-7xl mx-auto">
-            {/* Page Header */}
-            <div className="mb-6">
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">Identification events</h1>
-              <p className="text-sm text-gray-500">
-                Select a row for details. Events data is also available by{' '}
-                <a href="#" className="text-blue-600 hover:text-blue-800 underline">server API</a>.
-              </p>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-3">
-                <Button variant="outline" size="sm" className="border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
-                  <Filter className="h-4 w-4 mr-2" />
-                  Filters
-                </Button>
-                <Button variant="outline" size="sm" className="border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
-                  <Calendar className="h-4 w-4 mr-2" />
-                  Today
-                </Button>
-              </div>
-              <div className="flex items-center space-x-3">
-                <Button 
-                  onClick={() => setIsChatOpen(true)}
-                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-200"
-                >
-                  <svg className="h-4 w-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M12 2L2 7v10c0 5.55 3.84 10 9 11 1.16.21 2.76.21 3.92 0C20.16 27 24 22.55 24 17V7l-10-5z"/>
-                    <path d="M8 12h8"/>
-                    <path d="M12 8v8"/>
-                  </svg>
-                  Analyze with AI
-                </Button>
-                <Button variant="outline" size="sm" className="border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
-                  <Download className="h-4 w-4 mr-2" />
-                  Export
-                </Button>
-                <Button variant="outline" size="sm" className="border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
-                  <Copy className="h-4 w-4 mr-2" />
-                  Copy link
-                </Button>
-              </div>
-            </div>
-
-            {/* Event Count */}
-            <div className="text-sm text-gray-700 mb-4">
-              {events.length} events matching
-            </div>
-
-            {/* Events Table */}
-            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      VISITOR ID
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      IP ADDRESS
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      REQUEST ID
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      DATE
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {events.slice(0, 11).map((event, index) => (
-                    <tr 
-                      key={`${event.requestId}-${index}`} 
-                      className="hover:bg-gray-50 cursor-pointer bg-white"
-                    >
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
-                        {event.visitorId}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        <div className="flex items-center">
-                          <span className="mr-2">{getCountryFlag(event.country)}</span>
-                          {event.ipAddress}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
-                        {event.requestId}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {new Date(event.date).toLocaleDateString('en-US', {
-                          month: '2-digit',
-                          day: '2-digit',
-                          year: 'numeric'
-                        })}{' '}
-                        {new Date(event.date).toLocaleTimeString('en-US', {
-                          hour12: false,
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit'
-                        })}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          {currentPage === 'overview' ? (
+            <Overview events={events} />
+          ) : (
+            <Identification events={events} onOpenChat={() => setIsChatOpen(true)} />
+          )}
         </main>
       </div>
 

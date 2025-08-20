@@ -4,6 +4,10 @@ A powerful AI-powered analytics dashboard for FingerprintJS visitor identificati
 
 ## Features
 
+### 📊 Dashboard Pages
+- **Overview Page**: Subscription status, insights cards, API usage charts, and top metrics (origins, browsers, countries)
+- **Identification Page**: Detailed event table with visitor data and AI analysis capabilities
+
 ### 🤖 Dual AI Provider System
 - **Local AI (Ollama)**: Run AI analysis locally with Ollama models
 - **Cloud AI (ChatGPT)**: Use OpenAI's GPT models for analysis
@@ -23,6 +27,7 @@ A powerful AI-powered analytics dashboard for FingerprintJS visitor identificati
 - **Real-time Updates**: Live data visualization
 - **Responsive Design**: Works on all device sizes
 - **Interactive Elements**: Click-to-analyze functionality
+- **Overview Dashboard**: Comprehensive analytics dashboard with insights, API usage charts, and top metrics
 
 ## Setup Instructions
 
