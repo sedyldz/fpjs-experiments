@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import {  Send, X, BarChart3, PieChart, TrendingUp, Globe, Shield, Monitor, Brain, AlertCircle, Server, Cloud, Trash2, Maximize2, Minimize2 } from 'lucide-react';
+import {  Send, X, BarChart3, PieChart, TrendingUp, Globe, Shield, Monitor, Brain, AlertCircle, Server, Cloud, Trash2, Maximize2, Minimize2, RefreshCw } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, PieChart as RechartsPieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -96,6 +96,9 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
 
   // Chat cache for context
   const [chatCache, setChatCache] = useState<string>('');
+  
+  // State for generating more follow-up questions
+  const [isGeneratingMoreQuestions, setIsGeneratingMoreQuestions] = useState(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -304,6 +307,62 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
       setSuggestedQuestions(fallbackQuestions);
     } finally {
       setIsTyping(false);
+    }
+  };
+
+  // Function to generate more follow-up questions
+  const generateMoreFollowUpQuestions = async () => {
+    if (isGeneratingMoreQuestions) return;
+    
+    setIsGeneratingMoreQuestions(true);
+    
+    try {
+      // Get the last AI message to use as context
+      const lastAiMessage = messages.filter(msg => msg.type === 'ai').pop();
+      if (!lastAiMessage) {
+        console.log('No AI message found to generate follow-up questions from');
+        return;
+      }
+
+      // Call the follow-up questions endpoint
+      const response = await fetch('http://localhost:3001/api/ai/follow-up-questions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          aiResponse: lastAiMessage.content,
+          csvData: csvData,
+          conversationHistory: messages.slice(-6),
+          chatCache: chatCache,
+          isDeeper: true // Generate deeper, more specific questions
+        })
+      });
+
+      const result = await response.json();
+      
+      console.log('More questions API response:', result);
+      
+      if (result.success && result.questions && result.questions.length > 0) {
+        console.log('Setting new questions:', result.questions);
+        setSuggestedQuestions(result.questions);
+      } else {
+        console.log('Using fallback questions, API result:', result);
+        // Use fallback questions if AI generation fails
+        const fallbackQuestions = generateFallbackFollowUpQuestions(lastAiMessage.content, csvData, true);
+        console.log('Generated fallback questions:', fallbackQuestions);
+        setSuggestedQuestions(fallbackQuestions);
+      }
+    } catch (error) {
+      console.error('Error generating more follow-up questions:', error);
+      // Use fallback questions on error
+      const lastAiMessage = messages.filter(msg => msg.type === 'ai').pop();
+      if (lastAiMessage) {
+        const fallbackQuestions = generateFallbackFollowUpQuestions(lastAiMessage.content, csvData, true);
+        setSuggestedQuestions(fallbackQuestions);
+      }
+    } finally {
+      setIsGeneratingMoreQuestions(false);
     }
   };
 
@@ -701,20 +760,40 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
                 <Send className="h-4 w-4" />
               </Button>
             </div>
-                          <div className="mt-2 flex flex-wrap gap-1">
-                {suggestedQuestions.map((question, index) => (
-                  <Badge 
-                    key={index}
-                    variant="secondary" 
-                    className="cursor-pointer text-xs hover:bg-primary hover:text-primary-foreground transition-colors" 
-                    onClick={() => setInputValue(question)}
-                  >
-                    {index === 0 && <Monitor className="h-3 w-3 mr-1" />}
-                    {index === 1 && <Shield className="h-3 w-3 mr-1" />}
-                    {question}
-                  </Badge>
-                ))}
-              </div>
+                                                    <div className="mt-2 flex flex-wrap gap-1 items-center">
+              {suggestedQuestions.map((question, index) => (
+                <Badge 
+                  key={index}
+                  variant="secondary" 
+                  className="cursor-pointer text-xs hover:bg-primary hover:text-primary-foreground transition-colors" 
+                  onClick={() => setInputValue(question)}
+                >
+                  {index === 0 && <Monitor className="h-3 w-3 mr-1" />}
+                  {index === 1 && <Shield className="h-3 w-3 mr-1" />}
+                  {question}
+                </Badge>
+              ))}
+              
+              {/* Button to generate more follow-up questions */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={generateMoreFollowUpQuestions}
+                disabled={isGeneratingMoreQuestions || messages.filter(msg => msg.type === 'ai').length === 0}
+                className="ml-2 text-xs"
+              >
+                {isGeneratingMoreQuestions ? (
+                  <>
+                    <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-3 w-3 mr-1" />
+                  </>
+                )}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -817,7 +896,7 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
                   <Send className="h-4 w-4" />
                 </Button>
               </div>
-                          <div className="mt-2 flex flex-wrap gap-1">
+                          <div className="mt-2 flex flex-wrap gap-1 items-center">
               {suggestedQuestions.map((question, index) => (
                 <Badge 
                   key={index}
@@ -830,6 +909,25 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
                   {question}
                 </Badge>
               ))}
+              
+              {/* Button to generate more follow-up questions */}
+              <Button
+                variant="secondary"
+             
+                onClick={generateMoreFollowUpQuestions}
+                className="ml-2 text-xs bg-transparent hover:bg-transparent"
+              >
+                {isGeneratingMoreQuestions ? (
+                  <>
+                    <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-3 w-3 mr-1" />
+                  </>
+                )}
+              </Button>
             </div>
             </CardContent>
           </Card>
