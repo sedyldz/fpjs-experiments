@@ -3,8 +3,10 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { MessageCircle, Send, X, BarChart3, PieChart, TrendingUp, Globe, Shield, Monitor, Brain, AlertCircle, Server, Cloud } from 'lucide-react';
+import {  Send, X, BarChart3, PieChart, TrendingUp, Globe, Shield, Monitor, Brain, AlertCircle, Server, Cloud, Trash2 } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, PieChart as RechartsPieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface CSVEvent {
   visitorId: string;
@@ -46,14 +48,29 @@ interface AIChatProps {
 }
 
 export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
+  // Load messages from localStorage on component mount
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    const savedMessages = localStorage.getItem('ai-chat-messages');
+    if (savedMessages) {
+      try {
+        const parsed = JSON.parse(savedMessages);
+        // Convert timestamp strings back to Date objects
+        return parsed.map((msg: any) => ({
+          ...msg,
+          timestamp: new Date(msg.timestamp)
+        }));
+      } catch (error) {
+        console.error('Error parsing saved messages:', error);
+      }
+    }
+    // Default welcome message if no saved messages
+    return [{
       id: '1',
       type: 'ai',
       content: `Hello! I'm your FingerprintJS AI analytics assistant. I can analyze your identification events and provide deep insights into visitor patterns, security threats, geographic distribution, and more. Ask me anything about your data!`,
       timestamp: new Date()
-    }
-  ]);
+    }];
+  });
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [aiStatus, setAiStatus] = useState<{
@@ -69,6 +86,37 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  // Save messages to localStorage whenever they change
+  const saveMessagesToStorage = (newMessages: ChatMessage[]) => {
+    try {
+      localStorage.setItem('ai-chat-messages', JSON.stringify(newMessages));
+    } catch (error) {
+      console.error('Error saving messages to localStorage:', error);
+    }
+  };
+
+  // Wrapper function to update messages and save to localStorage
+  const updateMessages = (updater: (prev: ChatMessage[]) => ChatMessage[]) => {
+    setMessages(prev => {
+      const newMessages = updater(prev);
+      saveMessagesToStorage(newMessages);
+      return newMessages;
+    });
+  };
+
+  // Clear chat history
+  const clearChat = () => {
+    if (window.confirm('Are you sure you want to clear the chat history? This action cannot be undone.')) {
+      const welcomeMessage: ChatMessage = {
+        id: Date.now().toString(),
+        type: 'ai',
+        content: `Hello! I'm your FingerprintJS AI analytics assistant. I can analyze your identification events and provide deep insights into visitor patterns, security threats, geographic distribution, and more. Ask me anything about your data!`,
+        timestamp: new Date()
+      };
+      updateMessages(() => [welcomeMessage]);
+    }
   };
 
   useEffect(() => {
@@ -133,7 +181,7 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
       timestamp: new Date()
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    updateMessages(prev => [...prev, userMessage]);
     setInputValue('');
     setIsTyping(true);
 
@@ -163,7 +211,7 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
           provider: result.provider
         };
 
-        setMessages(prev => [...prev, aiMessage]);
+        updateMessages(prev => [...prev, aiMessage]);
       } else {
         // Handle error with fallback response
         const fallbackMessage: ChatMessage = {
@@ -175,24 +223,25 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
           provider: 'fallback'
         };
 
-        setMessages(prev => [...prev, fallbackMessage]);
+        updateMessages(prev => [...prev, fallbackMessage]);
       }
     } catch (error) {
       console.error('Error calling AI service:', error);
       
       // Generate fallback response
       const fallbackResponse = generateFallbackResponse(inputValue);
+      const fallbackChart = generateFallbackChart(inputValue);
       const fallbackMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         type: 'ai',
         content: fallbackResponse,
-        chart: generateFallbackChart(inputValue),
+        chart: fallbackChart,
         timestamp: new Date(),
         isFallback: true,
         provider: 'fallback'
       };
 
-      setMessages(prev => [...prev, fallbackMessage]);
+      updateMessages(prev => [...prev, fallbackMessage]);
     } finally {
       setIsTyping(false);
     }
@@ -260,7 +309,27 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
       };
     }
 
-    if (lowerQuestion.includes('security') || lowerQuestion.includes('threat')) {
+    if (lowerQuestion.includes('location') || lowerQuestion.includes('country') || lowerQuestion.includes('geographic')) {
+      const countryCounts = csvData.reduce((acc, event) => {
+        const country = event.country || 'Unknown';
+        acc[country] = (acc[country] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      return {
+        type: 'bar' as const,
+        data: Object.entries(countryCounts)
+          .sort(([,a], [,b]) => b - a)
+          .slice(0, 8)
+          .map(([country, count]) => ({ 
+            country, 
+            requests: count 
+          })),
+        title: 'Requests by Country'
+      };
+    }
+
+    if (lowerQuestion.includes('security') || lowerQuestion.includes('threat') || lowerQuestion.includes('vpn') || lowerQuestion.includes('bot')) {
       const securityData = [
         { name: 'VPN Detected', value: csvData.filter(e => e.vpnDetected).length },
         { name: 'Bot Detected', value: csvData.filter(e => e.botDetected).length },
@@ -274,23 +343,47 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
       };
     }
 
-    // Default chart
-    const visitorCounts = csvData.reduce((acc, event) => {
-      acc[event.visitorId] = (acc[event.visitorId] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
+    if (lowerQuestion.includes('browser') || lowerQuestion.includes('device') || lowerQuestion.includes('os')) {
+      const browserCounts = csvData.reduce((acc, event) => {
+        acc[event.browser] = (acc[event.browser] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
 
-    return {
-      type: 'bar' as const,
-      data: Object.entries(visitorCounts)
-        .sort(([,a], [,b]) => b - a)
-        .slice(0, 8)
-        .map(([visitorId, count]) => ({ 
-          visitor: visitorId.slice(0, 8) + '...', 
-          requests: count 
-        })),
-      title: 'Visitor Activity Overview'
-    };
+      return {
+        type: 'bar' as const,
+        data: Object.entries(browserCounts)
+          .sort(([,a], [,b]) => b - a)
+          .slice(0, 8)
+          .map(([browser, count]) => ({ 
+            browser, 
+            requests: count 
+          })),
+        title: 'Browser Usage Distribution'
+      };
+    }
+
+    // Only return a chart for specific data analysis questions
+    if (lowerQuestion.includes('chart') || lowerQuestion.includes('graph') || lowerQuestion.includes('visualize') || lowerQuestion.includes('show me')) {
+      const visitorCounts = csvData.reduce((acc, event) => {
+        acc[event.visitorId] = (acc[event.visitorId] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      return {
+        type: 'bar' as const,
+        data: Object.entries(visitorCounts)
+          .sort(([,a], [,b]) => b - a)
+          .slice(0, 8)
+          .map(([visitorId, count]) => ({ 
+            visitor: visitorId.slice(0, 8) + '...', 
+            requests: count 
+          })),
+        title: 'Visitor Activity Overview'
+      };
+    }
+
+    // Return undefined for general questions that don't need charts
+    return undefined;
   };
 
   const renderChart = (chart: ChatMessage['chart']) => {
@@ -374,9 +467,20 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
             <Brain className="h-5 w-5" />
             AI Analytics Assistant
           </CardTitle>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={clearChat}
+              title="Clear chat history"
+              className="text-gray-500 hover:text-red-500"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="flex flex-col h-[calc(100vh-5rem)]">
           <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
@@ -414,7 +518,9 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
                         </>
                       )}
                     </div>
-                    <p className="text-sm">{message.content}</p>
+                    <div className="chat-markdown">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+                    </div>
                     {message.chart && renderChart(message.chart)}
                     <div className="text-xs opacity-70 mt-2">
                       {message.timestamp.toLocaleTimeString()}

@@ -21,7 +21,7 @@ class AIService {
 
     this.aiProvider = process.env.AI_PROVIDER || 'fallback';
     this.ollamaModel = process.env.OLLAMA_MODEL || 'llama3.2';
-    this.openaiModel = process.env.OPENAI_MODEL || 'gpt-4';
+    this.openaiModel = process.env.OPENAI_MODEL || 'gpt-3.5-turbo';
     
     console.log('AI Service: Initializing with provider:', this.aiProvider);
     console.log('AI Service: Environment variables:', {
@@ -53,7 +53,6 @@ class AIService {
             this.chatModel = new ChatOpenAI({
               openAIApiKey: process.env.OPENAI_API_KEY,
               modelName: this.openaiModel,
-              temperature: 0.3,
             });
             this.isAIAvailable = true;
             console.log(`AI Service: Successfully initialized OpenAI with model ${this.openaiModel}`);
@@ -86,9 +85,12 @@ class AIService {
     if (!this.isAIAvailable) {
       console.log('AI Service: AI not available, returning fallback');
       console.log('AI Service: Debug - aiProvider:', this.aiProvider, 'isAIAvailable:', this.isAIAvailable);
-      // Force AI to be available for testing
-      console.log('AI Service: Forcing AI to be available for testing');
-      this.isAIAvailable = true;
+      return {
+        success: false,
+        error: 'AI service not available',
+        fallbackAnswer: this.generateFallbackAnswer(csvData, question),
+        provider: 'fallback'
+      };
     }
 
     try {

@@ -57,3 +57,77 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer components {
+  /* Custom styles for markdown content in chat */
+  .chat-markdown {
+    @apply text-sm;
+  }
+  
+  .chat-markdown h1,
+  .chat-markdown h2,
+  .chat-markdown h3,
+  .chat-markdown h4,
+  .chat-markdown h5,
+  .chat-markdown h6 {
+    @apply font-semibold mb-2 mt-3 text-base;
+  }
+  
+  .chat-markdown p {
+    @apply mb-2 leading-relaxed;
+  }
+  
+  .chat-markdown ul,
+  .chat-markdown ol {
+    @apply mb-2 pl-4;
+  }
+  
+  .chat-markdown li {
+    @apply mb-1;
+  }
+  
+  .chat-markdown strong {
+    @apply font-semibold;
+  }
+  
+  .chat-markdown code {
+    @apply bg-gray-100 px-1 py-0.5 rounded text-xs;
+  }
+  
+  .chat-markdown blockquote {
+    @apply border-l-4 border-gray-300 pl-4 italic text-gray-600;
+  }
+  
+  .chat-markdown table {
+    @apply w-full border-collapse border border-gray-300 mb-3;
+  }
+  
+  .chat-markdown th,
+  .chat-markdown td {
+    @apply border border-gray-300 px-3 py-2 text-left;
+  }
+  
+  .chat-markdown th {
+    @apply bg-gray-100 font-semibold;
+  }
+  
+  .chat-markdown tr:nth-child(even) {
+    @apply bg-gray-50;
+  }
+  
+  .chat-markdown del {
+    @apply line-through text-gray-500;
+  }
+  
+  .chat-markdown input[type="checkbox"] {
+    @apply mr-2;
+  }
+  
+  .chat-markdown .task-list-item {
+    @apply list-none;
+  }
+  
+  .chat-markdown .task-list-item input[type="checkbox"] {
+    @apply mr-2;
+  }
+}
