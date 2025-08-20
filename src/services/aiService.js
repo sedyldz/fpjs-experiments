@@ -87,8 +87,22 @@ class AIService {
     this.initializeAI();
     console.log('AI Service: analyzeData called with provider:', this.aiProvider, 'isAvailable:', this.isAIAvailable);
     
+    // Always check for previous context in the question
+    const hasPreviousContext = question.includes('Previous AI response:');
+    let originalQuestion = question;
+    let previousContext = '';
+    
+    if (hasPreviousContext) {
+      // Extract the original question and previous context
+      const contextMatch = question.match(/Previous AI response: "([^"]+)"\. User question: (.+)/);
+      if (contextMatch) {
+        previousContext = contextMatch[1];
+        originalQuestion = contextMatch[2];
+      }
+    }
+    
     // Fast mode for simple questions
-    const isFastMode = this.isFastModeQuestion(question);
+    const isFastMode = this.isFastModeQuestion(originalQuestion);
     if (isFastMode) {
       console.log('AI Service: Using fast mode for simple question');
     }
@@ -96,11 +110,11 @@ class AIService {
     if (!this.isAIAvailable) {
       console.log('AI Service: AI not available, returning fallback');
       console.log('AI Service: Debug - aiProvider:', this.aiProvider, 'isAIAvailable:', this.isAIAvailable);
-      const fallbackChart = this.generateFallbackChart(csvData, question);
+      const fallbackChart = this.generateFallbackChart(csvData, originalQuestion);
       return {
         success: false,
         error: 'AI service not available',
-        answer: this.generateFallbackAnswer(csvData, question),
+        answer: this.generateFallbackAnswer(csvData, originalQuestion),
         chart: fallbackChart,
         provider: 'fallback'
       };
@@ -112,11 +126,18 @@ class AIService {
       console.log('AI Service: Data summary prepared, length:', dataSummary.length);
       
       // Determine if the question requires a chart
-      const requiresChart = this.questionRequiresChart(question);
+      const requiresChart = this.questionRequiresChart(originalQuestion);
       
       const systemPrompt = `You are a data analyst for FingerprintJS visitor data. Provide concise, accurate insights.
 
 Data includes: visitor events, geography, browsers, security (VPN/bot detection), confidence scores.
+
+IMPORTANT: Provide only the analysis. Do NOT include follow-up questions, suggestions, or recommendations in your response. Focus solely on answering the user's question with data insights.
+
+${hasPreviousContext ? `
+IMPORTANT: The user is asking a follow-up question. Consider the context from your previous response when providing this analysis.
+Previous response: "${previousContext}"
+` : ''}
 
 ${requiresChart ? `
 RESPOND IN JSON FORMAT:
@@ -136,7 +157,7 @@ RESPOND IN PLAIN TEXT - be concise and specific.
 
 Data: ${dataSummary}`;
 
-      const userPrompt = `Q: ${question}
+      const userPrompt = `Q: ${originalQuestion}
 
 Analyze the data. ${requiresChart ? 'Include chart data.' : 'Be concise.'}`;
 
@@ -176,8 +197,8 @@ Analyze the data. ${requiresChart ? 'Include chart data.' : 'Be concise.'}`;
     } catch (error) {
       console.error('AI analysis error:', error);
       console.error('AI analysis error stack:', error.stack);
-      const fallbackChart = this.generateFallbackChart(csvData, question);
-      const fallbackAnswer = this.generateFallbackAnswer(csvData, question);
+      const fallbackChart = this.generateFallbackChart(csvData, originalQuestion);
+      const fallbackAnswer = this.generateFallbackAnswer(csvData, originalQuestion);
       
       return {
         success: false,
@@ -195,9 +216,9 @@ Analyze the data. ${requiresChart ? 'Include chart data.' : 'Be concise.'}`;
       console.log('AI Service: Ollama host:', process.env.OLLAMA_HOST);
       console.log('AI Service: Ollama model:', this.ollamaModel);
       
-      // Use a simpler prompt for testing
-      const simplePrompt = `You are a data analyst. Please answer this question: ${userPrompt.replace('Question: ', '')}`;
-      console.log('AI Service: Using simple prompt, length:', simplePrompt.length);
+      // Use the full system prompt for better results
+      const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
+      console.log('AI Service: Using full prompt, length:', fullPrompt.length);
       
       // Use fetch with proper error handling and timeout
       const controller = new AbortController();
@@ -212,8 +233,12 @@ Analyze the data. ${requiresChart ? 'Include chart data.' : 'Be concise.'}`;
           model: "llama3.2",
           messages: [
             {
+              role: 'system',
+              content: systemPrompt
+            },
+            {
               role: 'user',
-              content: simplePrompt
+              content: userPrompt
             }
           ],
           stream: false
@@ -687,6 +712,222 @@ Top Visitors: ${mostActiveVisitors.map(([v, n]) => `${v.slice(0,6)}(${n})`).join
     
     console.log('AI Service: Geographic chart:', geoChart);
     console.log('AI Service: Browser chart:', browserChart);
+  }
+
+  // Generate contextual follow-up questions based on AI response and data
+  async generateFollowUpQuestions(aiResponse, csvData, conversationHistory = [], chatCache = '', isDeeper = false) {
+    this.initializeAI();
+    
+    if (!this.isAIAvailable) {
+      return this.generateFallbackFollowUpQuestions(aiResponse, csvData, isDeeper);
+    }
+
+    try {
+      // Analyze the AI response to extract key topics
+      const keyTopics = this.extractKeyTopics(aiResponse);
+      
+      // Get data insights for context
+      const dataInsights = this.getDataInsights(csvData);
+      
+      // Create a prompt for generating follow-up questions
+      const systemPrompt = `You are an AI assistant that generates contextual follow-up questions for data analysis conversations.
+
+Based on the AI response and data insights, generate 2 relevant follow-up questions that:
+${isDeeper ? `
+1. Dive deeper into specific patterns or anomalies mentioned
+2. Explore advanced analysis or correlations
+3. Ask for detailed recommendations or actionable insights
+4. Investigate root causes or underlying factors
+` : `
+1. Build upon the insights provided in the response
+2. Explore related aspects of the data
+3. Help users dive deeper into interesting patterns
+4. Maintain conversation flow
+`}
+
+RESPOND IN JSON FORMAT:
+{
+  "questions": [
+    "Question 1",
+    "Question 2"
+  ]
+}
+
+Keep questions concise (under 50 characters) and specific to the data analysis context.`;
+
+      const userPrompt = `AI Response: ${aiResponse}
+
+Key Topics Identified: ${keyTopics.join(', ')}
+
+Data Insights: ${dataInsights}
+
+${chatCache ? `Recent Chat Context: ${chatCache}` : ''}
+
+Recent Conversation: ${conversationHistory.slice(-3).map(msg => `${msg.type}: ${msg.content}`).join(' | ')}
+
+${isDeeper ? 'Generate 2 deeper, more specific follow-up questions:' : 'Generate 2 contextual follow-up questions:'}`;
+
+      let response;
+      if (this.aiProvider === 'ollama') {
+        response = await this.analyzeWithOllama(systemPrompt, userPrompt);
+      } else if (this.aiProvider === 'openai') {
+        response = await this.analyzeWithOpenAI(systemPrompt, userPrompt);
+      } else {
+        throw new Error('No AI provider configured');
+      }
+
+      // Parse the response to extract questions
+      const parsedQuestions = this.parseFollowUpQuestions(response);
+      
+      return parsedQuestions.length > 0 ? parsedQuestions : this.generateFallbackFollowUpQuestions(aiResponse, csvData, isDeeper);
+
+    } catch (error) {
+      console.error('Error generating follow-up questions:', error);
+      return this.generateFallbackFollowUpQuestions(aiResponse, csvData, isDeeper);
+    }
+  }
+
+  // Extract key topics from AI response
+  extractKeyTopics(response) {
+    const topics = [];
+    const lowerResponse = response.toLowerCase();
+    
+    // Security-related topics
+    if (lowerResponse.includes('vpn') || lowerResponse.includes('bot') || lowerResponse.includes('security') || lowerResponse.includes('threat')) {
+      topics.push('security');
+    }
+    
+    // Geographic topics
+    if (lowerResponse.includes('country') || lowerResponse.includes('geographic') || lowerResponse.includes('location') || lowerResponse.includes('city')) {
+      topics.push('geography');
+    }
+    
+    // Visitor activity topics
+    if (lowerResponse.includes('visitor') || lowerResponse.includes('activity') || lowerResponse.includes('pattern') || lowerResponse.includes('behavior')) {
+      topics.push('visitors');
+    }
+    
+    // Browser/device topics
+    if (lowerResponse.includes('browser') || lowerResponse.includes('device') || lowerResponse.includes('os') || lowerResponse.includes('technology')) {
+      topics.push('browsers');
+    }
+    
+    // Confidence/accuracy topics
+    if (lowerResponse.includes('confidence') || lowerResponse.includes('accuracy') || lowerResponse.includes('score')) {
+      topics.push('confidence');
+    }
+    
+    // Time-based topics
+    if (lowerResponse.includes('trend') || lowerResponse.includes('time') || lowerResponse.includes('period') || lowerResponse.includes('date')) {
+      topics.push('trends');
+    }
+    
+    return topics.length > 0 ? topics : ['general'];
+  }
+
+  // Get data insights for context
+  getDataInsights(csvData) {
+    if (!csvData || csvData.length === 0) {
+      return "No data available";
+    }
+
+    const totalEvents = csvData.length;
+    const uniqueVisitors = new Set(csvData.map(e => e.visitorId)).size;
+    const uniqueCountries = new Set(csvData.map(e => e.country).filter(Boolean)).size;
+    const vpnDetected = csvData.filter(e => e.vpnDetected).length;
+    const botDetected = csvData.filter(e => e.botDetected).length;
+    const avgConfidence = csvData.reduce((sum, e) => sum + e.confidence, 0) / totalEvents;
+    
+    return `Dataset: ${totalEvents} events, ${uniqueVisitors} visitors, ${uniqueCountries} countries. Security: ${vpnDetected} VPN, ${botDetected} bots. Avg confidence: ${avgConfidence.toFixed(2)}`;
+  }
+
+  // Parse follow-up questions from AI response
+  parseFollowUpQuestions(response) {
+    try {
+      // Try to find JSON in the response
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const jsonStr = jsonMatch[0];
+        const parsed = JSON.parse(jsonStr);
+        
+        if (parsed.questions && Array.isArray(parsed.questions)) {
+          return parsed.questions.slice(0, 2); // Ensure max 2 questions
+        }
+      }
+    } catch (error) {
+      console.log('Failed to parse JSON from follow-up questions response');
+    }
+
+    // Fallback: try to extract questions from plain text
+    const lines = response.split('\n').filter(line => line.trim().length > 0);
+    const questions = lines
+      .filter(line => line.includes('?') && line.length < 100)
+      .map(line => line.replace(/^\d+\.\s*/, '').trim())
+      .slice(0, 2);
+
+    return questions.length > 0 ? questions : [];
+  }
+
+  // Generate fallback follow-up questions when AI is unavailable
+  generateFallbackFollowUpQuestions(aiResponse, csvData, isDeeper = false) {
+    const lowerResponse = aiResponse.toLowerCase();
+    const questions = [];
+
+    if (isDeeper) {
+      // Deeper, more specific questions
+      if (lowerResponse.includes('security') || lowerResponse.includes('vpn') || lowerResponse.includes('bot') || lowerResponse.includes('threat')) {
+        questions.push("What specific security measures should I implement?");
+        questions.push("How do these threats compare to industry averages?");
+      }
+      
+      else if (lowerResponse.includes('geographic') || lowerResponse.includes('country') || lowerResponse.includes('location')) {
+        questions.push("Which regions show unusual activity patterns?");
+        questions.push("How does geographic distribution affect security?");
+      }
+      
+      else if (lowerResponse.includes('visitor') || lowerResponse.includes('activity') || lowerResponse.includes('behavior')) {
+        questions.push("Which visitors show suspicious behavior patterns?");
+        questions.push("How do visitor patterns change over time?");
+      }
+      
+      else if (lowerResponse.includes('browser') || lowerResponse.includes('device') || lowerResponse.includes('technology')) {
+        questions.push("Which browsers are most commonly used by bots?");
+        questions.push("How do device types correlate with security threats?");
+      }
+      
+      else {
+        questions.push("What are the most significant data patterns?");
+        questions.push("How do these insights compare to benchmarks?");
+      }
+    } else {
+      // Initial, broader questions
+      if (lowerResponse.includes('security') || lowerResponse.includes('vpn') || lowerResponse.includes('bot') || lowerResponse.includes('threat')) {
+        questions.push("Show me security threats");
+        questions.push("Analyze VPN patterns");
+      }
+      
+      else if (lowerResponse.includes('geographic') || lowerResponse.includes('country') || lowerResponse.includes('location')) {
+        questions.push("Show geographic distribution");
+        questions.push("Analyze location patterns");
+      }
+      
+      else if (lowerResponse.includes('visitor') || lowerResponse.includes('activity') || lowerResponse.includes('behavior')) {
+        questions.push("Show visitor patterns");
+        questions.push("Analyze user behavior");
+      }
+      
+      else if (lowerResponse.includes('browser') || lowerResponse.includes('device') || lowerResponse.includes('technology')) {
+        questions.push("Show browser usage");
+        questions.push("Analyze device patterns");
+      }
+      
+      else {
+        questions.push("Show data patterns");
+        questions.push("Analyze insights");
+      }
+    }
+
+    return questions.slice(0, 2);
   }
 }
 

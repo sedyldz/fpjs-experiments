@@ -38,6 +38,7 @@ interface ChatMessage {
   timestamp: Date;
   isFallback?: boolean;
   provider?: string;
+
 }
 
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#8dd1e1', '#d084d0', '#ff6b6b', '#4ecdc4'];
@@ -86,6 +87,15 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isFullPage, setIsFullPage] = useState(false);
   const [chatWidth, setChatWidth] = useState(400);
+  
+  // State for dynamic suggested questions
+  const [suggestedQuestions, setSuggestedQuestions] = useState([
+    "Analyze visitor activity patterns",
+    "What are the security threats in my data?"
+  ]);
+
+  // Chat cache for context
+  const [chatCache, setChatCache] = useState<string>('');
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -119,6 +129,15 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
         timestamp: new Date()
       };
       updateMessages(() => [welcomeMessage]);
+      
+      // Reset suggested questions to initial state
+      setSuggestedQuestions([
+        "Analyze visitor activity patterns",
+        "What are the security threats in my data?"
+      ]);
+      
+      // Clear chat cache
+      setChatCache('');
     }
   };
 
@@ -189,15 +208,23 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
     setIsTyping(true);
 
     try {
-      // Call the AI analysis endpoint
-      const response = await fetch('http://localhost:3001/api/ai/analyze', {
+      // Always include the last AI response for context
+      const lastAiMessage = messages.filter(msg => msg.type === 'ai').pop();
+      const contextualQuestion = lastAiMessage 
+        ? `Previous AI response: "${lastAiMessage.content}". User question: ${inputValue}`
+        : inputValue;
+
+      // Call the AI analysis endpoint with follow-up questions generation
+      const response = await fetch('http://localhost:3001/api/ai/analyze-with-followup', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          question: inputValue,
-          csvData: csvData
+          question: contextualQuestion,
+          csvData: csvData,
+          conversationHistory: messages.slice(-6), // Last 6 messages for context
+          chatCache: chatCache
         })
       });
 
@@ -215,18 +242,38 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
         };
 
         updateMessages(prev => [...prev, aiMessage]);
+        
+        // Update chat cache with recent conversation
+        const recentMessages = messages.slice(-4).concat([userMessage, aiMessage]);
+        const cacheText = recentMessages.map(msg => `${msg.type}: ${msg.content}`).join(' | ');
+        setChatCache(cacheText);
+        
+        // Update suggested questions with the new follow-up questions
+        if (result.followUpQuestions && result.followUpQuestions.length > 0) {
+          setSuggestedQuestions(result.followUpQuestions);
+        }
       } else {
         // Handle error with fallback response
         const fallbackMessage: ChatMessage = {
           id: (Date.now() + 1).toString(),
           type: 'ai',
-          content: result.fallbackAnswer || 'I apologize, but I encountered an error while analyzing your data. Please try rephrasing your question.',
+          content: result.fallbackAnswer || result.answer || 'I apologize, but I encountered an error while analyzing your data. Please try rephrasing your question.',
           timestamp: new Date(),
           isFallback: true,
           provider: 'fallback'
         };
 
         updateMessages(prev => [...prev, fallbackMessage]);
+        
+        // Update chat cache
+        const recentMessages = messages.slice(-4).concat([userMessage, fallbackMessage]);
+        const cacheText = recentMessages.map(msg => `${msg.type}: ${msg.content}`).join(' | ');
+        setChatCache(cacheText);
+        
+        // Update suggested questions with the new follow-up questions
+        if (result.followUpQuestions && result.followUpQuestions.length > 0) {
+          setSuggestedQuestions(result.followUpQuestions);
+        }
       }
     } catch (error) {
       console.error('Error calling AI service:', error);
@@ -234,6 +281,8 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
       // Generate fallback response
       const fallbackResponse = generateFallbackResponse(inputValue);
       const fallbackChart = generateFallbackChart(inputValue);
+      const fallbackQuestions = generateFallbackFollowUpQuestions(fallbackResponse, csvData, false);
+      
       const fallbackMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         type: 'ai',
@@ -245,9 +294,81 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
       };
 
       updateMessages(prev => [...prev, fallbackMessage]);
+      
+      // Update chat cache
+      const recentMessages = messages.slice(-4).concat([userMessage, fallbackMessage]);
+      const cacheText = recentMessages.map(msg => `${msg.type}: ${msg.content}`).join(' | ');
+      setChatCache(cacheText);
+      
+      // Update suggested questions with the new follow-up questions
+      setSuggestedQuestions(fallbackQuestions);
     } finally {
       setIsTyping(false);
     }
+  };
+
+  // Remove the separate generateFollowUpQuestions function since it's now integrated
+
+  // Add fallback follow-up questions generator
+  const generateFallbackFollowUpQuestions = (aiResponse: string, csvData: CSVEvent[], isDeeper: boolean = false) => {
+    const lowerResponse = aiResponse.toLowerCase();
+    const questions = [];
+
+    if (isDeeper) {
+      // Deeper, more specific questions
+      if (lowerResponse.includes('security') || lowerResponse.includes('vpn') || lowerResponse.includes('bot') || lowerResponse.includes('threat')) {
+        questions.push("What specific security measures should I implement?");
+        questions.push("How do these threats compare to industry averages?");
+      }
+      
+      else if (lowerResponse.includes('geographic') || lowerResponse.includes('country') || lowerResponse.includes('location')) {
+        questions.push("Which regions show unusual activity patterns?");
+        questions.push("How does geographic distribution affect security?");
+      }
+      
+      else if (lowerResponse.includes('visitor') || lowerResponse.includes('activity') || lowerResponse.includes('behavior')) {
+        questions.push("Which visitors show suspicious behavior patterns?");
+        questions.push("How do visitor patterns change over time?");
+      }
+      
+      else if (lowerResponse.includes('browser') || lowerResponse.includes('device') || lowerResponse.includes('technology')) {
+        questions.push("Which browsers are most commonly used by bots?");
+        questions.push("How do device types correlate with security threats?");
+      }
+      
+      else {
+        questions.push("What are the most significant data patterns?");
+        questions.push("How do these insights compare to benchmarks?");
+      }
+    } else {
+      // Initial, broader questions
+      if (lowerResponse.includes('security') || lowerResponse.includes('vpn') || lowerResponse.includes('bot') || lowerResponse.includes('threat')) {
+        questions.push("Show me security threats");
+        questions.push("Analyze VPN patterns");
+      }
+      
+      else if (lowerResponse.includes('geographic') || lowerResponse.includes('country') || lowerResponse.includes('location')) {
+        questions.push("Show geographic distribution");
+        questions.push("Analyze location patterns");
+      }
+      
+      else if (lowerResponse.includes('visitor') || lowerResponse.includes('activity') || lowerResponse.includes('behavior')) {
+        questions.push("Show visitor patterns");
+        questions.push("Analyze user behavior");
+      }
+      
+      else if (lowerResponse.includes('browser') || lowerResponse.includes('device') || lowerResponse.includes('technology')) {
+        questions.push("Show browser usage");
+        questions.push("Analyze device patterns");
+      }
+      
+      else {
+        questions.push("Show data patterns");
+        questions.push("Analyze insights");
+      }
+    }
+
+    return questions.slice(0, 2);
   };
 
   // Fallback response generator for when AI is unavailable
@@ -460,6 +581,43 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
     );
   };
 
+  const renderMessage = (message: ChatMessage) => {
+    return (
+      <div
+        className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
+      >
+        <div
+          className={`max-w-[80%] p-3 rounded-lg ${
+            message.type === 'user'
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-muted text-muted-foreground'
+          }`}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            {message.type === 'ai' && (
+              <>
+                {message.provider && getProviderIcon(message.provider)}
+                <span className="text-xs opacity-70">
+                  {getProviderLabel(message.provider || 'fallback')}
+                </span>
+              </>
+            )}
+          </div>
+          <div className="chat-markdown">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+          </div>
+          {message.chart && renderChart(message.chart)}
+          
+          <div className="text-xs opacity-70 mt-2">
+            {message.timestamp.toLocaleTimeString()}
+          </div>
+        </div>
+        
+
+      </div>
+    );
+  };
+
   if (!isOpen) return null;
 
   // Full page view
@@ -510,35 +668,8 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
             <div className="flex-1 pr-4 overflow-auto">
               <div className="space-y-4">
                 {messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div
-                      className={`max-w-[80%] p-3 rounded-lg ${
-                        message.type === 'user'
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-muted text-muted-foreground'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        {message.type === 'ai' && (
-                          <>
-                            {message.provider && getProviderIcon(message.provider)}
-                            <span className="text-xs opacity-70">
-                              {getProviderLabel(message.provider || 'fallback')}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                      <div className="chat-markdown">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
-                      </div>
-                      {message.chart && renderChart(message.chart)}
-                      <div className="text-xs opacity-70 mt-2">
-                        {message.timestamp.toLocaleTimeString()}
-                      </div>
-                    </div>
+                  <div key={message.id}>
+                    {renderMessage(message)}
                   </div>
                 ))}
                 {isTyping && (
@@ -570,40 +701,20 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
                 <Send className="h-4 w-4" />
               </Button>
             </div>
-            <div className="mt-2 flex flex-wrap gap-1">
-              <Badge 
-                variant="secondary" 
-                className="cursor-pointer text-xs" 
-                onClick={() => setInputValue("Analyze visitor activity patterns and identify unusual behavior")}
-              >
-                <Monitor className="h-3 w-3 mr-1" />
-                Visitors
-              </Badge>
-              <Badge 
-                variant="secondary" 
-                className="cursor-pointer text-xs"
-                onClick={() => setInputValue("What are the security threats in my data and how should I address them?")}
-              >
-                <Shield className="h-3 w-3 mr-1" />
-                Security
-              </Badge>
-              <Badge 
-                variant="secondary" 
-                className="cursor-pointer text-xs"
-                onClick={() => setInputValue("Analyze geographic distribution and identify potential fraud patterns")}
-              >
-                <Globe className="h-3 w-3 mr-1" />
-                Geography
-              </Badge>
-              <Badge 
-                variant="secondary" 
-                className="cursor-pointer text-xs"
-                onClick={() => setInputValue("What insights can you provide about browser and device usage patterns?")}
-              >
-                <BarChart3 className="h-3 w-3 mr-1" />
-                Browsers
-              </Badge>
-            </div>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                {suggestedQuestions.map((question, index) => (
+                  <Badge 
+                    key={index}
+                    variant="secondary" 
+                    className="cursor-pointer text-xs hover:bg-primary hover:text-primary-foreground transition-colors" 
+                    onClick={() => setInputValue(question)}
+                  >
+                    {index === 0 && <Monitor className="h-3 w-3 mr-1" />}
+                    {index === 1 && <Shield className="h-3 w-3 mr-1" />}
+                    {question}
+                  </Badge>
+                ))}
+              </div>
           </CardContent>
         </Card>
       </div>
@@ -671,40 +782,13 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
                 </p>
               </div>
               <div className="flex-1 pr-4 overflow-auto">
-                <div className="space-y-4">
-                  {messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div
-                        className={`max-w-[80%] p-3 rounded-lg ${
-                          message.type === 'user'
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted text-muted-foreground'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 mb-2">
-                          {message.type === 'ai' && (
-                            <>
-                              {message.provider && getProviderIcon(message.provider)}
-                              <span className="text-xs opacity-70">
-                                {getProviderLabel(message.provider || 'fallback')}
-                              </span>
-                            </>
-                          )}
-                        </div>
-                        <div className="chat-markdown">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
-                        </div>
-                        {message.chart && renderChart(message.chart)}
-                        <div className="text-xs opacity-70 mt-2">
-                          {message.timestamp.toLocaleTimeString()}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {isTyping && (
+                              <div className="space-y-4">
+                {messages.map((message) => (
+                  <div key={message.id}>
+                    {renderMessage(message)}
+                  </div>
+                ))}
+                {isTyping && (
                     <div className="flex justify-start">
                       <div className="bg-muted text-muted-foreground p-3 rounded-lg">
                         <div className="flex items-center gap-2">
@@ -733,40 +817,20 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
                   <Send className="h-4 w-4" />
                 </Button>
               </div>
-              <div className="mt-2 flex flex-wrap gap-1">
+                          <div className="mt-2 flex flex-wrap gap-1">
+              {suggestedQuestions.map((question, index) => (
                 <Badge 
+                  key={index}
                   variant="secondary" 
-                  className="cursor-pointer text-xs" 
-                  onClick={() => setInputValue("Analyze visitor activity patterns and identify unusual behavior")}
+                  className="cursor-pointer text-xs hover:bg-primary hover:text-primary-foreground transition-colors" 
+                  onClick={() => setInputValue(question)}
                 >
-                  <Monitor className="h-3 w-3 mr-1" />
-                  Visitors
+                  {index === 0 && <Monitor className="h-3 w-3 mr-1" />}
+                  {index === 1 && <Shield className="h-3 w-3 mr-1" />}
+                  {question}
                 </Badge>
-                <Badge 
-                  variant="secondary" 
-                  className="cursor-pointer text-xs"
-                  onClick={() => setInputValue("What are the security threats in my data and how should I address them?")}
-                >
-                  <Shield className="h-3 w-3 mr-1" />
-                  Security
-                </Badge>
-                <Badge 
-                  variant="secondary" 
-                  className="cursor-pointer text-xs"
-                  onClick={() => setInputValue("Analyze geographic distribution and identify potential fraud patterns")}
-                >
-                  <Globe className="h-3 w-3 mr-1" />
-                  Geography
-                </Badge>
-                <Badge 
-                  variant="secondary" 
-                  className="cursor-pointer text-xs"
-                  onClick={() => setInputValue("What insights can you provide about browser and device usage patterns?")}
-                >
-                  <BarChart3 className="h-3 w-3 mr-1" />
-                  Browsers
-                </Badge>
-              </div>
+              ))}
+            </div>
             </CardContent>
           </Card>
         </ResizablePanel>

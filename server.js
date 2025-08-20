@@ -143,6 +143,122 @@ app.post('/api/ai/analyze', async (req, res) => {
   }
 });
 
+// Combined AI Analysis with Follow-up Questions endpoint
+app.post('/api/ai/analyze-with-followup', async (req, res) => {
+  try {
+    const { question, csvData, conversationHistory, chatCache } = req.body;
+    
+    if (!question) {
+      return res.status(400).json({
+        success: false,
+        error: 'Question is required'
+      });
+    }
+    
+    if (!csvData || !Array.isArray(csvData) || csvData.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'CSV data is required and must be a non-empty array'
+      });
+    }
+    
+    console.log(`Combined AI Analysis requested for question: "${question}" with ${csvData.length} data points`);
+    
+    // Perform AI analysis first
+    const analysis = await aiService.analyzeData(csvData, question);
+    
+    // Generate follow-up questions based on the analysis response
+    let followUpQuestions = [];
+    try {
+      followUpQuestions = await aiService.generateFollowUpQuestions(
+        analysis.answer, 
+        csvData, 
+        conversationHistory || [], 
+        chatCache || '', 
+        true // Generate deeper questions
+      );
+    } catch (followUpError) {
+      console.error('Error generating follow-up questions:', followUpError);
+      // Use fallback questions if AI generation fails
+      followUpQuestions = aiService.generateFallbackFollowUpQuestions(analysis.answer, csvData, true);
+    }
+    
+    res.json({
+      success: true,
+      answer: analysis.answer,
+      chart: analysis.chart,
+      isFallback: !analysis.success,
+      provider: analysis.provider,
+      followUpQuestions: followUpQuestions,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('Combined AI Analysis error:', error);
+    
+    // Generate fallback response and questions
+    const fallbackAnswer = 'I apologize, but I encountered an error while analyzing your data. Please try rephrasing your question or check your data format.';
+    const fallbackQuestions = aiService.generateFallbackFollowUpQuestions(fallbackAnswer, req.body.csvData || [], true);
+    
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      fallbackAnswer: fallbackAnswer,
+      provider: 'fallback',
+      followUpQuestions: fallbackQuestions
+    });
+  }
+});
+
+// Follow-up Questions endpoint
+app.post('/api/ai/follow-up-questions', async (req, res) => {
+  try {
+    const { aiResponse, csvData, conversationHistory, chatCache, isDeeper } = req.body;
+    
+    if (!aiResponse) {
+      return res.status(400).json({
+        success: false,
+        error: 'AI response is required'
+      });
+    }
+    
+    if (!csvData || !Array.isArray(csvData)) {
+      return res.status(400).json({
+        success: false,
+        error: 'CSV data is required and must be an array'
+      });
+    }
+    
+    console.log(`Generating follow-up questions for response with ${csvData.length} data points, isDeeper: ${isDeeper}`);
+    
+    // Generate contextual follow-up questions
+    const questions = await aiService.generateFollowUpQuestions(
+      aiResponse, 
+      csvData, 
+      conversationHistory || [], 
+      chatCache || '', 
+      isDeeper || false
+    );
+    
+    res.json({
+      success: true,
+      questions: questions,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('Follow-up questions error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      questions: [
+        "Show data patterns",
+        "Analyze insights"
+      ]
+    });
+  }
+});
+
 // AI Status endpoint
 app.get('/api/ai/status', (req, res) => {
   const aiStatus = aiService.getStatus();

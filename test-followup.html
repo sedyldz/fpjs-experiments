@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Follow-up Questions Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .response {
+            background: #f5f5f5;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 3px;
+        }
+        .followup-questions {
+            background: #e3f2fd;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 3px;
+        }
+        .question-badge {
+            display: inline-block;
+            background: #2196f3;
+            color: white;
+            padding: 5px 10px;
+            margin: 2px;
+            border-radius: 15px;
+            cursor: pointer;
+        }
+        .question-badge:hover {
+            background: #1976d2;
+        }
+        button {
+            background: #4caf50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h1>Follow-up Questions Integration Test</h1>
+    
+    <div class="test-section">
+        <h2>Test 1: Basic Analysis with Follow-up Questions</h2>
+        <button onclick="testBasicAnalysis()">Test Basic Analysis</button>
+        <div id="test1-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 2: Security Analysis with Follow-up Questions</h2>
+        <button onclick="testSecurityAnalysis()">Test Security Analysis</button>
+        <div id="test2-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 3: Geographic Analysis with Follow-up Questions</h2>
+        <button onclick="testGeographicAnalysis()">Test Geographic Analysis</button>
+        <div id="test3-result"></div>
+    </div>
+
+    <script>
+        const testData = [
+            {
+                visitorId: "visitor1",
+                ipAddress: "192.168.1.1",
+                country: "US",
+                city: "New York",
+                browser: "Chrome",
+                os: "Windows",
+                confidence: 0.95,
+                vpnDetected: false,
+                botDetected: false,
+                date: "2024-01-01"
+            },
+            {
+                visitorId: "visitor2",
+                ipAddress: "192.168.1.2",
+                country: "CA",
+                city: "Toronto",
+                browser: "Firefox",
+                os: "MacOS",
+                confidence: 0.87,
+                vpnDetected: true,
+                botDetected: false,
+                date: "2024-01-01"
+            },
+            {
+                visitorId: "visitor3",
+                ipAddress: "192.168.1.3",
+                country: "UK",
+                city: "London",
+                browser: "Safari",
+                os: "iOS",
+                confidence: 0.92,
+                vpnDetected: false,
+                botDetected: true,
+                date: "2024-01-01"
+            }
+        ];
+
+        async function testBasicAnalysis() {
+            const resultDiv = document.getElementById('test1-result');
+            resultDiv.innerHTML = '<p>Testing...</p>';
+            
+            try {
+                const response = await fetch('http://localhost:3001/api/ai/analyze-with-followup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        question: "Show me visitor patterns",
+                        csvData: testData
+                    })
+                });
+
+                const result = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <div class="response">
+                        <h3>AI Response:</h3>
+                        <p>${result.answer}</p>
+                    </div>
+                    <div class="followup-questions">
+                        <h3>Follow-up Questions (separate from answer):</h3>
+                        ${result.followUpQuestions.map(q => 
+                            `<span class="question-badge" onclick="alert('Clicked: ${q}')">${q}</span>`
+                        ).join('')}
+                    </div>
+                    <p><strong>Provider:</strong> ${result.provider}</p>
+                    <p><strong>Success:</strong> ${result.success}</p>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+
+        async function testSecurityAnalysis() {
+            const resultDiv = document.getElementById('test2-result');
+            resultDiv.innerHTML = '<p>Testing...</p>';
+            
+            try {
+                const response = await fetch('http://localhost:3001/api/ai/analyze-with-followup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        question: "What are the security threats in my data?",
+                        csvData: testData
+                    })
+                });
+
+                const result = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <div class="response">
+                        <h3>AI Response:</h3>
+                        <p>${result.answer}</p>
+                    </div>
+                    <div class="followup-questions">
+                        <h3>Follow-up Questions (separate from answer):</h3>
+                        ${result.followUpQuestions.map(q => 
+                            `<span class="question-badge" onclick="alert('Clicked: ${q}')">${q}</span>`
+                        ).join('')}
+                    </div>
+                    <p><strong>Provider:</strong> ${result.provider}</p>
+                    <p><strong>Success:</strong> ${result.success}</p>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+
+        async function testGeographicAnalysis() {
+            const resultDiv = document.getElementById('test3-result');
+            resultDiv.innerHTML = '<p>Testing...</p>';
+            
+            try {
+                const response = await fetch('http://localhost:3001/api/ai/analyze-with-followup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        question: "Show me geographic distribution",
+                        csvData: testData
+                    })
+                });
+
+                const result = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <div class="response">
+                        <h3>AI Response:</h3>
+                        <p>${result.answer}</p>
+                    </div>
+                    <div class="followup-questions">
+                        <h3>Follow-up Questions (separate from answer):</h3>
+                        ${result.followUpQuestions.map(q => 
+                            `<span class="question-badge" onclick="alert('Clicked: ${q}')">${q}</span>`
+                        ).join('')}
+                    </div>
+                    <p><strong>Provider:</strong> ${result.provider}</p>
+                    <p><strong>Success:</strong> ${result.success}</p>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>
