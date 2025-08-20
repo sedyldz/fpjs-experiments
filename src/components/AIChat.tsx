@@ -1,12 +1,13 @@
 import  { useState, useRef, useEffect } from 'react';
-import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Badge } from './ui/badge';
-import {  Send, X, BarChart3, PieChart, TrendingUp, Globe, Shield, Monitor, Brain, AlertCircle, Server, Cloud, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import {  Send, X, BarChart3, PieChart, TrendingUp, Globe, Shield, Monitor, Brain, AlertCircle, Server, Cloud, Trash2, Maximize2, Minimize2 } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, PieChart as RechartsPieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 
 interface CSVEvent {
   visitorId: string;
@@ -83,6 +84,8 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
     model: 'none'
   });
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [isFullPage, setIsFullPage] = useState(false);
+  const [chatWidth, setChatWidth] = useState(400);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -459,140 +462,315 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-y-0 right-0 z-50 w-96 bg-background border-l shadow-lg">
-      <Card className="h-full rounded-none border-0">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-          <CardTitle className="flex items-center gap-2">
-            <Brain className="h-5 w-5" />
-            AI Analytics Assistant
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={clearChat}
-              title="Clear chat history"
-              className="text-gray-500 hover:text-red-500"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="sm" onClick={onClose}>
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="flex flex-col h-[calc(100vh-5rem)]">
-          <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-            <div className="flex items-center gap-2 text-gray-800">
-              {getProviderIcon(aiStatus.provider)}
-              <span className="text-sm font-medium">
-                {getProviderLabel(aiStatus.provider)} {aiStatus.isAvailable ? '(Active)' : '(Unavailable)'}
-              </span>
+  // Full page view
+  if (isFullPage) {
+    return (
+      <div className="fixed inset-0 z-50 bg-background">
+        <Card className="h-full rounded-none border-0">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4 border-b">
+            <CardTitle className="flex items-center gap-2">
+              <Brain className="h-5 w-5" />
+              AI Analytics Assistant - Full Page View
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={clearChat}
+                title="Clear chat history"
+                className="text-gray-500 hover:text-red-500"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => setIsFullPage(false)}
+                title="Exit full page"
+              >
+                <Minimize2 className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="sm" onClick={onClose}>
+                <X className="h-4 w-4" />
+              </Button>
             </div>
-            <p className="text-xs text-gray-600 mt-1">
-              Model: {aiStatus.model} | Provider: {aiStatus.provider}
-            </p>
-          </div>
-          <div className="flex-1 pr-4 overflow-auto">
-            <div className="space-y-4">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
+          </CardHeader>
+          <CardContent className="flex flex-col h-[calc(100vh-5rem)]">
+            <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+              <div className="flex items-center gap-2 text-gray-800">
+                {getProviderIcon(aiStatus.provider)}
+                <span className="text-sm font-medium">
+                  {getProviderLabel(aiStatus.provider)} {aiStatus.isAvailable ? '(Active)' : '(Unavailable)'}
+                </span>
+              </div>
+              <p className="text-xs text-gray-600 mt-1">
+                Model: {aiStatus.model} | Provider: {aiStatus.provider}
+              </p>
+            </div>
+            <div className="flex-1 pr-4 overflow-auto">
+              <div className="space-y-4">
+                {messages.map((message) => (
                   <div
-                    className={`max-w-[80%] p-3 rounded-lg ${
-                      message.type === 'user'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted text-muted-foreground'
-                    }`}
+                    key={message.id}
+                    className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
-                    <div className="flex items-center gap-2 mb-2">
-                      {message.type === 'ai' && (
-                        <>
-                          {message.provider && getProviderIcon(message.provider)}
-                          <span className="text-xs opacity-70">
-                            {getProviderLabel(message.provider || 'fallback')}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                    <div className="chat-markdown">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
-                    </div>
-                    {message.chart && renderChart(message.chart)}
-                    <div className="text-xs opacity-70 mt-2">
-                      {message.timestamp.toLocaleTimeString()}
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {isTyping && (
-                <div className="flex justify-start">
-                  <div className="bg-muted text-muted-foreground p-3 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <Brain className="h-3 w-3 animate-pulse" />
-                      <div className="flex items-center gap-1">
-                        <div className="w-2 h-2 bg-current rounded-full animate-bounce"></div>
-                        <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                        <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                    <div
+                      className={`max-w-[80%] p-3 rounded-lg ${
+                        message.type === 'user'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted text-muted-foreground'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        {message.type === 'ai' && (
+                          <>
+                            {message.provider && getProviderIcon(message.provider)}
+                            <span className="text-xs opacity-70">
+                              {getProviderLabel(message.provider || 'fallback')}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      <div className="chat-markdown">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+                      </div>
+                      {message.chart && renderChart(message.chart)}
+                      <div className="text-xs opacity-70 mt-2">
+                        {message.timestamp.toLocaleTimeString()}
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
+                ))}
+                {isTyping && (
+                  <div className="flex justify-start">
+                    <div className="bg-muted text-muted-foreground p-3 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <Brain className="h-3 w-3 animate-pulse" />
+                        <div className="flex items-center gap-1">
+                          <div className="w-2 h-2 bg-current rounded-full animate-bounce"></div>
+                          <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                          <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div ref={messagesEndRef} />
             </div>
-            <div ref={messagesEndRef} />
-          </div>
-          <div className="flex gap-2 pt-4 border-t">
-            <Input
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              placeholder="Ask about your FingerprintJS data..."
-              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-              disabled={isTyping}
-            />
-            <Button onClick={handleSendMessage} disabled={isTyping || !inputValue.trim()}>
-              <Send className="h-4 w-4" />
-            </Button>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-1">
-            <Badge 
-              variant="secondary" 
-              className="cursor-pointer text-xs" 
-              onClick={() => setInputValue("Analyze visitor activity patterns and identify unusual behavior")}
-            >
-              <Monitor className="h-3 w-3 mr-1" />
-              Visitors
-            </Badge>
-            <Badge 
-              variant="secondary" 
-              className="cursor-pointer text-xs"
-              onClick={() => setInputValue("What are the security threats in my data and how should I address them?")}
-            >
-              <Shield className="h-3 w-3 mr-1" />
-              Security
-            </Badge>
-            <Badge 
-              variant="secondary" 
-              className="cursor-pointer text-xs"
-              onClick={() => setInputValue("Analyze geographic distribution and identify potential fraud patterns")}
-            >
-              <Globe className="h-3 w-3 mr-1" />
-              Geography
-            </Badge>
-            <Badge 
-              variant="secondary" 
-              className="cursor-pointer text-xs"
-              onClick={() => setInputValue("What insights can you provide about browser and device usage patterns?")}
-            >
-              <BarChart3 className="h-3 w-3 mr-1" />
-              Browsers
-            </Badge>
-          </div>
-        </CardContent>
-      </Card>
+            <div className="flex gap-2 pt-4 border-t">
+              <Input
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                placeholder="Ask about your FingerprintJS data..."
+                onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                disabled={isTyping}
+              />
+              <Button onClick={handleSendMessage} disabled={isTyping || !inputValue.trim()}>
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1">
+              <Badge 
+                variant="secondary" 
+                className="cursor-pointer text-xs" 
+                onClick={() => setInputValue("Analyze visitor activity patterns and identify unusual behavior")}
+              >
+                <Monitor className="h-3 w-3 mr-1" />
+                Visitors
+              </Badge>
+              <Badge 
+                variant="secondary" 
+                className="cursor-pointer text-xs"
+                onClick={() => setInputValue("What are the security threats in my data and how should I address them?")}
+              >
+                <Shield className="h-3 w-3 mr-1" />
+                Security
+              </Badge>
+              <Badge 
+                variant="secondary" 
+                className="cursor-pointer text-xs"
+                onClick={() => setInputValue("Analyze geographic distribution and identify potential fraud patterns")}
+              >
+                <Globe className="h-3 w-3 mr-1" />
+                Geography
+              </Badge>
+              <Badge 
+                variant="secondary" 
+                className="cursor-pointer text-xs"
+                onClick={() => setInputValue("What insights can you provide about browser and device usage patterns?")}
+              >
+                <BarChart3 className="h-3 w-3 mr-1" />
+                Browsers
+              </Badge>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Resizable sidebar view
+  return (
+    <div className="fixed inset-y-0 right-0 z-50">
+      <ResizablePanelGroup
+        direction="horizontal"
+        className="h-full"
+      >
+        <ResizablePanel defaultSize={75} minSize={20}>
+          {/* Main content area - this will be hidden when chat is open */}
+          <div className="h-full bg-transparent" />
+        </ResizablePanel>
+        <ResizableHandle />
+        <ResizablePanel 
+          defaultSize={25} 
+          minSize={20}
+          onResize={(size: number) => {
+            setChatWidth((size / 100) * window.innerWidth);
+          }}
+        >
+          <Card className="h-full rounded-none border-0">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+              <CardTitle className="flex items-center gap-2">
+                <Brain className="h-5 w-5" />
+                AI Analytics Assistant
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => setIsFullPage(true)}
+                  title="Full page view"
+                >
+                  <Maximize2 className="h-4 w-4" />
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={clearChat}
+                  title="Clear chat history"
+                  className="text-gray-500 hover:text-red-500"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="sm" onClick={onClose}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="flex flex-col h-[calc(100vh-5rem)]">
+              <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                <div className="flex items-center gap-2 text-gray-800">
+                  {getProviderIcon(aiStatus.provider)}
+                  <span className="text-sm font-medium">
+                    {getProviderLabel(aiStatus.provider)} {aiStatus.isAvailable ? '(Active)' : '(Unavailable)'}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-600 mt-1">
+                  Model: {aiStatus.model} | Provider: {aiStatus.provider}
+                </p>
+              </div>
+              <div className="flex-1 pr-4 overflow-auto">
+                <div className="space-y-4">
+                  {messages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div
+                        className={`max-w-[80%] p-3 rounded-lg ${
+                          message.type === 'user'
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-muted text-muted-foreground'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 mb-2">
+                          {message.type === 'ai' && (
+                            <>
+                              {message.provider && getProviderIcon(message.provider)}
+                              <span className="text-xs opacity-70">
+                                {getProviderLabel(message.provider || 'fallback')}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                        <div className="chat-markdown">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+                        </div>
+                        {message.chart && renderChart(message.chart)}
+                        <div className="text-xs opacity-70 mt-2">
+                          {message.timestamp.toLocaleTimeString()}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {isTyping && (
+                    <div className="flex justify-start">
+                      <div className="bg-muted text-muted-foreground p-3 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <Brain className="h-3 w-3 animate-pulse" />
+                          <div className="flex items-center gap-1">
+                            <div className="w-2 h-2 bg-current rounded-full animate-bounce"></div>
+                            <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                            <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div ref={messagesEndRef} />
+              </div>
+              <div className="flex gap-2 pt-4 border-t">
+                <Input
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  placeholder="Ask about your FingerprintJS data..."
+                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                  disabled={isTyping}
+                />
+                <Button onClick={handleSendMessage} disabled={isTyping || !inputValue.trim()}>
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1">
+                <Badge 
+                  variant="secondary" 
+                  className="cursor-pointer text-xs" 
+                  onClick={() => setInputValue("Analyze visitor activity patterns and identify unusual behavior")}
+                >
+                  <Monitor className="h-3 w-3 mr-1" />
+                  Visitors
+                </Badge>
+                <Badge 
+                  variant="secondary" 
+                  className="cursor-pointer text-xs"
+                  onClick={() => setInputValue("What are the security threats in my data and how should I address them?")}
+                >
+                  <Shield className="h-3 w-3 mr-1" />
+                  Security
+                </Badge>
+                <Badge 
+                  variant="secondary" 
+                  className="cursor-pointer text-xs"
+                  onClick={() => setInputValue("Analyze geographic distribution and identify potential fraud patterns")}
+                >
+                  <Globe className="h-3 w-3 mr-1" />
+                  Geography
+                </Badge>
+                <Badge 
+                  variant="secondary" 
+                  className="cursor-pointer text-xs"
+                  onClick={() => setInputValue("What insights can you provide about browser and device usage patterns?")}
+                >
+                  <BarChart3 className="h-3 w-3 mr-1" />
+                  Browsers
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </div>
   );
 }
