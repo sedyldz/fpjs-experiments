@@ -305,8 +305,8 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
           .sort(([,a], [,b]) => b - a)
           .slice(0, 10)
           .map(([visitorId, count]) => ({ 
-            visitor: visitorId.slice(0, 8) + '...', 
-            requests: count 
+            name: visitorId.slice(0, 8) + '...', 
+            value: count 
           })),
         title: 'Top 10 Visitors by Request Count'
       };
@@ -325,8 +325,8 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
           .sort(([,a], [,b]) => b - a)
           .slice(0, 8)
           .map(([country, count]) => ({ 
-            country, 
-            requests: count 
+            name: country, 
+            value: count 
           })),
         title: 'Requests by Country'
       };
@@ -358,8 +358,8 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
           .sort(([,a], [,b]) => b - a)
           .slice(0, 8)
           .map(([browser, count]) => ({ 
-            browser, 
-            requests: count 
+            name: browser, 
+            value: count 
           })),
         title: 'Browser Usage Distribution'
       };
@@ -378,8 +378,8 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
           .sort(([,a], [,b]) => b - a)
           .slice(0, 8)
           .map(([visitorId, count]) => ({ 
-            visitor: visitorId.slice(0, 8) + '...', 
-            requests: count 
+            name: visitorId.slice(0, 8) + '...', 
+            value: count 
           })),
         title: 'Visitor Activity Overview'
       };
@@ -408,7 +408,7 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
               <BarChart data={chart.data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis 
-                  dataKey={Object.keys(chart.data[0])[0]} 
+                  dataKey="name" 
                   tick={{ fontSize: 12 }}
                   interval={0}
                   angle={-45}
@@ -417,20 +417,20 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
                 />
                 <YAxis tick={{ fontSize: 12 }} />
                 <Tooltip />
-                <Bar dataKey={Object.keys(chart.data[0])[1]} fill="#8884d8" />
+                <Bar dataKey="value" fill="#8884d8" />
               </BarChart>
             ) : chart.type === 'line' ? (
               <LineChart data={chart.data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis 
-                  dataKey={Object.keys(chart.data[0])[0]} 
+                  dataKey="name" 
                   tick={{ fontSize: 12 }}
                 />
                 <YAxis tick={{ fontSize: 12 }} />
                 <Tooltip />
                 <Line 
                   type="monotone" 
-                  dataKey={Object.keys(chart.data[0])[1]} 
+                  dataKey="value" 
                   stroke="#8884d8" 
                   strokeWidth={2}
                 />

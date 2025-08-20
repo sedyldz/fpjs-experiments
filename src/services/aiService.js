@@ -21,7 +21,8 @@ class AIService {
 
     this.aiProvider = process.env.AI_PROVIDER || 'fallback';
     this.ollamaModel = process.env.OLLAMA_MODEL || 'llama3.2';
-    this.openaiModel = process.env.OPENAI_MODEL || 'gpt-3.5-turbo';
+    // Use GPT-4o-mini for fastest response (faster than GPT-3.5-turbo)
+    this.openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
     
     console.log('AI Service: Initializing with provider:', this.aiProvider);
     console.log('AI Service: Environment variables:', {
@@ -48,14 +49,20 @@ class AIService {
           if (process.env.OPENAI_API_KEY) {
             this.openai = new OpenAI({
               apiKey: process.env.OPENAI_API_KEY,
+              timeout: 15000, // 15 second timeout for faster failure
+              maxRetries: 1, // Reduce retries for faster response
             });
             
             this.chatModel = new ChatOpenAI({
               openAIApiKey: process.env.OPENAI_API_KEY,
               modelName: this.openaiModel,
+              temperature: 0.3, // Lower temperature for faster, more focused responses
+              maxTokens: 1000, // Limit tokens for faster response
+              timeout: 15000, // 15 second timeout
+              maxRetries: 1, // Reduce retries
             });
             this.isAIAvailable = true;
-            console.log(`AI Service: Successfully initialized OpenAI with model ${this.openaiModel}`);
+            console.log(`AI Service: Successfully initialized OpenAI with model ${this.openaiModel} (optimized for speed)`);
           } else {
             console.warn('AI Service: OPENAI_API_KEY not set, falling back to rule-based analysis');
             this.isAIAvailable = false;
@@ -79,54 +86,59 @@ class AIService {
   async analyzeData(csvData, question) {
     this.initializeAI();
     console.log('AI Service: analyzeData called with provider:', this.aiProvider, 'isAvailable:', this.isAIAvailable);
-    console.log('AI Service: Environment check - AI_PROVIDER:', process.env.AI_PROVIDER, 'OLLAMA_HOST:', process.env.OLLAMA_HOST);
-    console.log('AI Service: Instance variables - aiProvider:', this.aiProvider, 'isAIAvailable:', this.isAIAvailable, 'initialized:', this.initialized);
+    
+    // Fast mode for simple questions
+    const isFastMode = this.isFastModeQuestion(question);
+    if (isFastMode) {
+      console.log('AI Service: Using fast mode for simple question');
+    }
 
     if (!this.isAIAvailable) {
       console.log('AI Service: AI not available, returning fallback');
       console.log('AI Service: Debug - aiProvider:', this.aiProvider, 'isAIAvailable:', this.isAIAvailable);
+      const fallbackChart = this.generateFallbackChart(csvData, question);
       return {
         success: false,
         error: 'AI service not available',
-        fallbackAnswer: this.generateFallbackAnswer(csvData, question),
+        answer: this.generateFallbackAnswer(csvData, question),
+        chart: fallbackChart,
         provider: 'fallback'
       };
     }
 
     try {
       console.log('AI Service: Preparing data summary...');
-      const dataSummary = this.prepareDataSummary(csvData);
+      const dataSummary = isFastMode ? this.prepareFastDataSummary(csvData) : this.prepareDataSummary(csvData);
       console.log('AI Service: Data summary prepared, length:', dataSummary.length);
-      console.log('AI Service: Data summary preview:', dataSummary.substring(0, 200) + '...');
       
-      const systemPrompt = `You are an expert data analyst specializing in FingerprintJS visitor identification data. 
+      // Determine if the question requires a chart
+      const requiresChart = this.questionRequiresChart(question);
       
-Your task is to analyze visitor identification events and provide insightful, accurate answers to user questions.
+      const systemPrompt = `You are a data analyst for FingerprintJS visitor data. Provide concise, accurate insights.
 
-Available data includes:
-- Visitor identification events with timestamps
-- Geographic information (country, city)
-- Browser and operating system details
-- Security indicators (VPN detection, bot detection)
-- Confidence scores for identification accuracy
-- IP addresses and user agents
+Data includes: visitor events, geography, browsers, security (VPN/bot detection), confidence scores.
 
-Guidelines:
-1. Provide specific, data-driven insights
-2. Use exact numbers and percentages when available
-3. Identify patterns, anomalies, and security concerns
-4. Suggest actionable recommendations when relevant
-5. Be concise but comprehensive
-6. If the question cannot be answered with the available data, clearly state this
+${requiresChart ? `
+RESPOND IN JSON FORMAT:
+{
+  "analysis": "Brief analysis text...",
+  "chart": {
+    "type": "bar|line|pie",
+    "title": "Chart title",
+    "data": [{"name": "Category", "value": 123}]
+  }
+}
+- Use "bar" for categories, "line" for trends, "pie" for proportions
+- Max 8 data points, use exact values from data
+` : `
+RESPOND IN PLAIN TEXT - be concise and specific.
+`}
 
-Data Summary:
-${dataSummary}
+Data: ${dataSummary}`;
 
-Respond in a helpful, professional tone. Focus on providing actionable insights for security, user experience, and business intelligence.`;
+      const userPrompt = `Q: ${question}
 
-      const userPrompt = `Question: ${question}
-
-Please analyze the FingerprintJS data and provide a comprehensive answer. Include specific insights, patterns, and recommendations based on the data.`;
+Analyze the data. ${requiresChart ? 'Include chart data.' : 'Be concise.'}`;
 
       const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
       console.log('AI Service: Full prompt length:', fullPrompt.length);
@@ -149,9 +161,14 @@ Please analyze the FingerprintJS data and provide a comprehensive answer. Includ
       }
       
       console.log('AI Service: AI analysis successful, response length:', response.length);
+      
+      // Parse the response to extract chart data if present
+      const parsedResponse = this.parseAIResponse(response, requiresChart);
+      
       return {
         success: true,
-        answer: response,
+        answer: parsedResponse.analysis,
+        chart: parsedResponse.chart,
         dataSummary: dataSummary,
         provider: this.aiProvider
       };
@@ -159,10 +176,14 @@ Please analyze the FingerprintJS data and provide a comprehensive answer. Includ
     } catch (error) {
       console.error('AI analysis error:', error);
       console.error('AI analysis error stack:', error.stack);
+      const fallbackChart = this.generateFallbackChart(csvData, question);
+      const fallbackAnswer = this.generateFallbackAnswer(csvData, question);
+      
       return {
         success: false,
         error: error.message,
-        fallbackAnswer: this.generateFallbackAnswer(csvData, question),
+        answer: fallbackAnswer || 'Analysis completed with fallback data.',
+        chart: fallbackChart,
         provider: 'fallback'
       };
     }
@@ -214,7 +235,9 @@ Please analyze the FingerprintJS data and provide a comprehensive answer. Includ
       console.log('AI Service: Ollama response data keys:', Object.keys(data));
       console.log('AI Service: Ollama analysis successful');
       
-      return data.message.content;
+      // Ensure we get a clean response
+      const content = data.message?.content || data.content || 'Analysis completed successfully.';
+      return content.trim();
     } catch (error) {
       console.error('Ollama analysis error:', error);
       console.error('Ollama analysis error stack:', error.stack);
@@ -229,7 +252,11 @@ Please analyze the FingerprintJS data and provide a comprehensive answer. Includ
         new HumanMessage(userPrompt)
       ];
 
-      const response = await this.chatModel.invoke(messages);
+      // Use streaming for faster response
+      const response = await this.chatModel.invoke(messages, {
+        timeout: 15000,
+        maxRetries: 1
+      });
       return response.content;
     } catch (error) {
       console.error('OpenAI analysis error:', error);
@@ -242,6 +269,14 @@ Please analyze the FingerprintJS data and provide a comprehensive answer. Includ
     if (!csvData || csvData.length === 0) {
       return "No data available for analysis.";
     }
+
+    // Debug: Log data structure to help identify issues
+    console.log('AI Service: Data sample:', {
+      totalEvents: csvData.length,
+      sampleEvent: csvData[0],
+      browserSample: csvData.slice(0, 5).map(e => e.browser),
+      countrySample: csvData.slice(0, 5).map(e => e.country)
+    });
 
     const totalEvents = csvData.length;
     const uniqueVisitors = new Set(csvData.map(e => e.visitorId)).size;
@@ -266,6 +301,7 @@ Please analyze the FingerprintJS data and provide a comprehensive answer. Includ
       return acc;
     }, {});
     const topCountries = Object.entries(countryCounts)
+      .filter(([country, count]) => country && country !== 'Unknown')
       .sort(([,a], [,b]) => b - a)
       .slice(0, 5);
     
@@ -276,6 +312,7 @@ Please analyze the FingerprintJS data and provide a comprehensive answer. Includ
       return acc;
     }, {});
     const topBrowsers = Object.entries(browserCounts)
+      .filter(([browser, count]) => browser && browser !== 'Unknown')
       .sort(([,a], [,b]) => b - a)
       .slice(0, 5);
     
@@ -286,6 +323,7 @@ Please analyze the FingerprintJS data and provide a comprehensive answer. Includ
       return acc;
     }, {});
     const topOS = Object.entries(osCounts)
+      .filter(([os, count]) => os && os !== 'Unknown')
       .sort(([,a], [,b]) => b - a)
       .slice(0, 5);
     
@@ -318,39 +356,12 @@ Please analyze the FingerprintJS data and provide a comprehensive answer. Includ
       .sort(([,a], [,b]) => b - a)
       .slice(0, 5);
 
-    return `
-DATASET OVERVIEW:
-- Total Events: ${totalEvents}
-- Unique Visitors: ${uniqueVisitors}
-- Unique IP Addresses: ${uniqueIPs}
-- Geographic Coverage: ${uniqueCountries} countries, ${uniqueCities} cities
-- Time Range: ${startDate} to ${endDate}
-
-SECURITY ANALYSIS:
-- VPN Detections: ${vpnDetected} (${((vpnDetected/totalEvents)*100).toFixed(1)}%)
-- Bot Detections: ${botDetected} (${((botDetected/totalEvents)*100).toFixed(1)}%)
-- Clean Requests: ${cleanRequests} (${((cleanRequests/totalEvents)*100).toFixed(1)}%)
-
-CONFIDENCE ANALYSIS:
-- Average Confidence Score: ${avgConfidence.toFixed(3)}
-- High Confidence (≥80%): ${highConfidence} events (${((highConfidence/totalEvents)*100).toFixed(1)}%)
-- Low Confidence (<60%): ${lowConfidence} events (${((lowConfidence/totalEvents)*100).toFixed(1)}%)
-
-TOP COUNTRIES:
-${topCountries.map(([country, count]) => `- ${country}: ${count} events (${((count/totalEvents)*100).toFixed(1)}%)`).join('\n')}
-
-TOP BROWSERS:
-${topBrowsers.map(([browser, count]) => `- ${browser}: ${count} events (${((count/totalEvents)*100).toFixed(1)}%)`).join('\n')}
-
-TOP OPERATING SYSTEMS:
-${topOS.map(([os, count]) => `- ${os}: ${count} events (${((count/totalEvents)*100).toFixed(1)}%)`).join('\n')}
-
-MOST ACTIVE VISITORS:
-${mostActiveVisitors.map(([visitor, count]) => `- ${visitor.slice(0, 8)}...: ${count} events`).join('\n')}
-
-MOST ACTIVE IP ADDRESSES:
-${mostActiveIPs.map(([ip, count]) => `- ${ip}: ${count} events`).join('\n')}
-`;
+    return `Events: ${totalEvents}, Visitors: ${uniqueVisitors}, IPs: ${uniqueIPs}, Countries: ${uniqueCountries}
+Security: VPN ${vpnDetected}, Bot ${botDetected}, Clean ${cleanRequests}
+Confidence: Avg ${avgConfidence.toFixed(2)}, High ${highConfidence}, Low ${lowConfidence}
+Top Countries: ${topCountries.map(([c, n]) => `${c}(${n})`).join(', ')}
+Top Browsers: ${topBrowsers.map(([b, n]) => `${b}(${n})`).join(', ')}
+Top Visitors: ${mostActiveVisitors.map(([v, n]) => `${v.slice(0,6)}(${n})`).join(', ')}`;
   }
 
   // Generate a fallback answer when AI is unavailable
@@ -368,88 +379,222 @@ ${mostActiveIPs.map(([ip, count]) => `- ${ip}: ${count} events`).join('\n')}
       return `Security analysis shows ${vpnDetected} VPN connections and ${botDetected} bot detections out of ${csvData.length} total events. This represents ${(((vpnDetected + botDetected) / csvData.length) * 100).toFixed(1)}% potential security threats.`;
     }
     
-    if (lowerQuestion.includes('location') || lowerQuestion.includes('country')) {
+    if (lowerQuestion.includes('geograph') || lowerQuestion.includes('location') || lowerQuestion.includes('country')) {
       const uniqueCountries = new Set(csvData.map(e => e.country).filter(Boolean)).size;
-      return `Your data shows activity from ${uniqueCountries} different countries, indicating a geographically diverse user base. This distribution helps identify your global reach and detect unusual access patterns.`;
-    }
-    
-    return `I've analyzed your FingerprintJS dataset with ${csvData.length} identification events. The data shows visitor patterns, geographic distribution, and security indicators that provide valuable insights into your user base and potential threats.`;
-  }
-
-  // Generate chart data based on AI analysis
-  async generateChartData(csvData, question) {
-    const lowerQuestion = question.toLowerCase();
-    
-    // This could be enhanced with AI to suggest the best chart type
-    // For now, using the existing logic with some AI-driven improvements
-    
-    if (lowerQuestion.includes('visitor') || lowerQuestion.includes('activity')) {
-      const visitorCounts = csvData.reduce((acc, event) => {
-        acc[event.visitorId] = (acc[event.visitorId] || 0) + 1;
-        return acc;
-      }, {});
-      
-      return {
-        type: 'bar',
-        data: Object.entries(visitorCounts)
-          .sort(([,a], [,b]) => b - a)
-          .slice(0, 10)
-          .map(([visitorId, count]) => ({ 
-            visitor: visitorId.slice(0, 8) + '...', 
-            requests: count 
-          })),
-        title: 'Top 10 Visitors by Request Count'
-      };
-    }
-    
-    if (lowerQuestion.includes('security') || lowerQuestion.includes('threat')) {
-      const securityData = [
-        { name: 'VPN Detected', value: csvData.filter(e => e.vpnDetected).length },
-        { name: 'Bot Detected', value: csvData.filter(e => e.botDetected).length },
-        { name: 'Clean Requests', value: csvData.filter(e => !e.vpnDetected && !e.botDetected).length }
-      ];
-      
-      return {
-        type: 'pie',
-        data: securityData.filter(item => item.value > 0),
-        title: 'Security Threat Analysis'
-      };
-    }
-    
-    if (lowerQuestion.includes('geographic') || lowerQuestion.includes('country')) {
       const countryCounts = csvData.reduce((acc, event) => {
         const country = event.country || 'Unknown';
         acc[country] = (acc[country] || 0) + 1;
         return acc;
       }, {});
       
-      return {
-        type: 'pie',
-        data: Object.entries(countryCounts)
-          .sort(([,a], [,b]) => b - a)
-          .slice(0, 8)
-          .map(([name, value]) => ({ name, value })),
-        title: 'Requests by Country'
-      };
+      const topCountries = Object.entries(countryCounts)
+        .filter(([country, count]) => country && country !== 'Unknown')
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 3);
+      
+      return `Geographic analysis shows activity from ${uniqueCountries} different countries. The top countries by request volume are: ${topCountries.map(([c, n]) => `${c} (${n} requests)`).join(', ')}. This distribution helps identify your global reach and detect unusual access patterns.`;
     }
     
-    // Default chart
-    const visitorCounts = csvData.reduce((acc, event) => {
-      acc[event.visitorId] = (acc[event.visitorId] || 0) + 1;
-      return acc;
-    }, {});
+    if (lowerQuestion.includes('browser') || lowerQuestion.includes('device')) {
+      const browserCounts = csvData.reduce((acc, event) => {
+        const browser = event.browser || 'Unknown';
+        acc[browser] = (acc[browser] || 0) + 1;
+        return acc;
+      }, {});
+      
+      const topBrowsers = Object.entries(browserCounts)
+        .filter(([browser, count]) => browser && browser !== 'Unknown')
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 3);
+      
+      return `Browser analysis shows ${Object.keys(browserCounts).filter(b => b !== 'Unknown').length} different browsers in use. The most popular browsers are: ${topBrowsers.map(([b, n]) => `${b} (${n} requests)`).join(', ')}. This helps understand your user's technology preferences and detect potential bot activity.`;
+    }
+    
+    return `I've analyzed your FingerprintJS dataset with ${csvData.length} identification events. The data shows visitor patterns, geographic distribution, and security indicators that provide valuable insights into your user base and potential threats.`;
+  }
+
+
+
+  // Determine if a question requires a chart
+  questionRequiresChart(question) {
+    const lowerQuestion = question.toLowerCase();
+    const chartKeywords = [
+      'chart', 'graph', 'visualize', 'show me', 'display', 'plot', 'trend',
+      'compare', 'distribution', 'percentage', 'proportion', 'breakdown',
+      'top', 'most', 'highest', 'lowest', 'activity', 'pattern'
+    ];
+    
+    return chartKeywords.some(keyword => lowerQuestion.includes(keyword));
+  }
+
+  // Determine if question can use fast mode
+  isFastModeQuestion(question) {
+    const lowerQuestion = question.toLowerCase();
+    const fastKeywords = [
+      'total', 'count', 'how many', 'number of', 'summary', 'overview',
+      'basic', 'simple', 'quick', 'fast'
+    ];
+    
+    return fastKeywords.some(keyword => lowerQuestion.includes(keyword));
+  }
+
+  // Prepare minimal data summary for fast mode
+  prepareFastDataSummary(csvData) {
+    if (!csvData || csvData.length === 0) {
+      return "No data available.";
+    }
+
+    const totalEvents = csvData.length;
+    const uniqueVisitors = new Set(csvData.map(e => e.visitorId)).size;
+    const vpnDetected = csvData.filter(e => e.vpnDetected).length;
+    const botDetected = csvData.filter(e => e.botDetected).length;
+    
+    return `Total: ${totalEvents} events, ${uniqueVisitors} visitors. Security: ${vpnDetected} VPN, ${botDetected} bots.`;
+  }
+
+  // Parse AI response to extract chart data if present
+  parseAIResponse(response, requiresChart) {
+    if (!requiresChart) {
+      return {
+        analysis: response,
+        chart: null
+      };
+    }
+
+    try {
+      // Try to find JSON in the response
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const jsonStr = jsonMatch[0];
+        const parsed = JSON.parse(jsonStr);
+        
+        if (parsed.analysis && parsed.chart) {
+          return {
+            analysis: parsed.analysis,
+            chart: parsed.chart
+          };
+        }
+      }
+    } catch (error) {
+      console.log('AI Service: Failed to parse JSON from AI response, using fallback');
+    }
+
+    // If no valid JSON found or response is garbled, return a clean fallback
+    const cleanResponse = response ? response.trim() : 'Analysis completed successfully.';
     
     return {
-      type: 'bar',
-      data: Object.entries(visitorCounts)
+      analysis: cleanResponse,
+      chart: null
+    };
+  }
+
+  // Generate fallback chart when AI is unavailable
+  generateFallbackChart(csvData, question) {
+    const lowerQuestion = question.toLowerCase();
+
+    if (lowerQuestion.includes('visitor') || lowerQuestion.includes('activity')) {
+      const visitorCounts = csvData.reduce((acc, event) => {
+        acc[event.visitorId] = (acc[event.visitorId] || 0) + 1;
+        return acc;
+      }, {});
+
+      return {
+        type: 'bar',
+        data: Object.entries(visitorCounts)
+          .sort(([,a], [,b]) => b - a)
+          .slice(0, 10)
+          .map(([visitorId, count]) => ({ 
+            name: visitorId.slice(0, 8) + '...', 
+            value: count 
+          })),
+        title: 'Top 10 Visitors by Request Count'
+      };
+    }
+
+    if (lowerQuestion.includes('location') || lowerQuestion.includes('country') || lowerQuestion.includes('geographic') || lowerQuestion.includes('geograph')) {
+      const countryCounts = csvData.reduce((acc, event) => {
+        const country = event.country || 'Unknown';
+        acc[country] = (acc[country] || 0) + 1;
+        return acc;
+      }, {});
+
+      // Filter out empty countries and sort by count
+      const validCountryData = Object.entries(countryCounts)
+        .filter(([country, count]) => country && country !== 'Unknown' && count > 0)
         .sort(([,a], [,b]) => b - a)
         .slice(0, 8)
-        .map(([visitorId, count]) => ({ 
-          visitor: visitorId.slice(0, 8) + '...', 
-          requests: count 
-        })),
-      title: 'Visitor Activity Overview'
-    };
+        .map(([country, count]) => ({ 
+          name: country, 
+          value: count 
+        }));
+
+      return {
+        type: 'bar',
+        data: validCountryData.length > 0 ? validCountryData : [{ name: 'No Data', value: 1 }],
+        title: 'Geographic Distribution by Country'
+      };
+    }
+
+    if (lowerQuestion.includes('security') || lowerQuestion.includes('threat') || lowerQuestion.includes('vpn') || lowerQuestion.includes('bot')) {
+      const securityData = [
+        { name: 'VPN Detected', value: csvData.filter(e => e.vpnDetected).length },
+        { name: 'Bot Detected', value: csvData.filter(e => e.botDetected).length },
+        { name: 'Clean Requests', value: csvData.filter(e => !e.vpnDetected && !e.botDetected).length }
+      ];
+
+      return {
+        type: 'pie',
+        data: securityData.filter(item => item.value > 0),
+        title: 'Security Threat Analysis'
+      };
+    }
+
+    if (lowerQuestion.includes('browser') || lowerQuestion.includes('device') || lowerQuestion.includes('os')) {
+      const browserCounts = csvData.reduce((acc, event) => {
+        const browser = event.browser || 'Unknown';
+        acc[browser] = (acc[browser] || 0) + 1;
+        return acc;
+      }, {});
+
+      // Filter out empty browsers and sort by count
+      const validBrowserData = Object.entries(browserCounts)
+        .filter(([browser, count]) => browser && browser !== 'Unknown' && count > 0)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 8)
+        .map(([browser, count]) => ({ 
+          name: browser, 
+          value: count 
+        }));
+
+      return {
+        type: 'bar',
+        data: validBrowserData.length > 0 ? validBrowserData : [{ name: 'No Data', value: 1 }],
+        title: 'Browser Usage Distribution'
+      };
+    }
+
+    // Only return a chart for specific data analysis questions
+    if (lowerQuestion.includes('chart') || lowerQuestion.includes('graph') || lowerQuestion.includes('visualize') || lowerQuestion.includes('show me')) {
+      const visitorCounts = csvData.reduce((acc, event) => {
+        acc[event.visitorId] = (acc[event.visitorId] || 0) + 1;
+        return acc;
+      }, {});
+
+      return {
+        type: 'bar',
+        data: Object.entries(visitorCounts)
+          .sort(([,a], [,b]) => b - a)
+          .slice(0, 8)
+          .map(([visitorId, count]) => ({ 
+            name: visitorId.slice(0, 8) + '...', 
+            value: count 
+          })),
+        title: 'Visitor Activity Overview'
+      };
+    }
+
+    // Return null for general questions that don't need charts
+    return null;
   }
 
   // Get current AI provider status
@@ -509,6 +654,39 @@ ${mostActiveIPs.map(([ip, count]) => `- ${ip}: ${count} events`).join('\n')}
       console.error('AI Service: Ollama test failed:', error);
       throw error;
     }
+  }
+
+  // Debug method to test data processing
+  debugDataProcessing(csvData) {
+    console.log('AI Service: Debug data processing...');
+    
+    if (!csvData || csvData.length === 0) {
+      console.log('AI Service: No data provided');
+      return;
+    }
+
+    console.log('AI Service: Total events:', csvData.length);
+    console.log('AI Service: Sample event:', csvData[0]);
+    
+    // Test geographic data
+    const countries = csvData.map(e => e.country).filter(Boolean);
+    console.log('AI Service: Countries found:', [...new Set(countries)]);
+    
+    // Test browser data
+    const browsers = csvData.map(e => e.browser).filter(Boolean);
+    console.log('AI Service: Browsers found:', [...new Set(browsers)]);
+    
+    // Test security data
+    const vpnCount = csvData.filter(e => e.vpnDetected).length;
+    const botCount = csvData.filter(e => e.botDetected).length;
+    console.log('AI Service: Security - VPN:', vpnCount, 'Bot:', botCount);
+    
+    // Test chart generation
+    const geoChart = this.generateFallbackChart(csvData, 'geographic distribution');
+    const browserChart = this.generateFallbackChart(csvData, 'browser usage');
+    
+    console.log('AI Service: Geographic chart:', geoChart);
+    console.log('AI Service: Browser chart:', browserChart);
   }
 }
 

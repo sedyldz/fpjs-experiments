@@ -120,16 +120,13 @@ app.post('/api/ai/analyze', async (req, res) => {
     
     console.log(`AI Analysis requested for question: "${question}" with ${csvData.length} data points`);
     
-    // Perform AI analysis
+    // Perform AI analysis (now includes chart data when appropriate)
     const analysis = await aiService.analyzeData(csvData, question);
-    
-    // Generate chart data
-    const chartData = await aiService.generateChartData(csvData, question);
     
     res.json({
       success: true,
-      answer: analysis.answer || analysis.fallbackAnswer,
-      chart: chartData,
+      answer: analysis.answer,
+      chart: analysis.chart,
       isFallback: !analysis.success,
       provider: analysis.provider,
       timestamp: new Date().toISOString()
@@ -140,7 +137,7 @@ app.post('/api/ai/analyze', async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message,
-      fallbackAnswer: 'I apologize, but I encountered an error while analyzing your data. Please try rephrasing your question or check your data format.',
+      answer: 'I apologize, but I encountered an error while analyzing your data. Please try rephrasing your question or check your data format.',
       provider: 'fallback'
     });
   }
