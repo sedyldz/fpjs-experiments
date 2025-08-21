@@ -24,6 +24,7 @@ interface CSVEvent {
   linkedId: string;
   url: string;
   userAgent: string;
+  suspectScore: number;
 }
 
 interface ChatMessage {
@@ -47,9 +48,10 @@ interface AIChatProps {
   isOpen: boolean;
   onClose: () => void;
   csvData: CSVEvent[];
+  initialMessage?: string;
 }
 
-export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
+export function AIChat({ isOpen, onClose, csvData, initialMessage }: AIChatProps) {
   // Load messages from localStorage on component mount
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     const savedMessages = localStorage.getItem('ai-chat-messages');
@@ -69,7 +71,7 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
     return [{
       id: '1',
       type: 'ai',
-      content: `Hello! I'm your FingerprintJS AI analytics assistant. I can analyze your identification events and provide deep insights into visitor patterns, security threats, geographic distribution, and more. Ask me anything about your data!`,
+      content: initialMessage || `Hello! I'm your FingerprintJS AI analytics assistant. I can analyze your identification events and provide deep insights into visitor patterns, security threats, geographic distribution, and more. Ask me anything about your data!`,
       timestamp: new Date()
     }];
   });
@@ -96,6 +98,14 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
 
   // Chat cache for context
   const [chatCache, setChatCache] = useState<string>('');
+  
+  // Handle initial message when chat opens
+  useEffect(() => {
+    if (isOpen && initialMessage) {
+      // Set the initial message in the input field for user to review and send
+      setInputValue(initialMessage);
+    }
+  }, [isOpen, initialMessage]);
   
   // State for generating more follow-up questions
   const [isGeneratingMoreQuestions, setIsGeneratingMoreQuestions] = useState(false);
@@ -309,6 +319,8 @@ export function AIChat({ isOpen, onClose, csvData }: AIChatProps) {
       setIsTyping(false);
     }
   };
+
+
 
   // Function to generate more follow-up questions
   const generateMoreFollowUpQuestions = async () => {

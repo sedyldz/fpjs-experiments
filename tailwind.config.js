@@ -79,11 +79,44 @@ export default {
   				to: {
   					height: 0
   				}
+  			},
+  			'natural-blink': {
+  				'0%, 85%': {
+  					borderRadius: '50%',
+  					width: '6px',
+  					height: '6px'
+  				},
+  				'90%, 95%': {
+  					borderRadius: '50%',
+  					width: '6px',
+  					height: '2px',
+  				},
+  				'100%': {
+  					borderRadius: '50%',
+  					width: '6px',
+  					height: '6px'
+  				}
+  			},
+  			'look-around': {
+  				'0%, 100%': {
+  					transform: 'translateX(0px) translateY(0px)'
+  				},
+  				'25%': {
+  					transform: 'translateX(2px) translateY(-2px)'
+  				},
+  				'50%': {
+  					transform: 'translateX(-4px) translateY(0px)'
+  				},
+  				'75%': {
+  					transform: 'translateX(2px) translateY(2px)'
+  				}
   			}
   		},
   		animation: {
   			'accordion-down': 'accordion-down 0.2s ease-out',
-  			'accordion-up': 'accordion-up 0.2s ease-out'
+  			'accordion-up': 'accordion-up 0.2s ease-out',
+  			'natural-blink': 'natural-blink 4s ease-in-out infinite',
+  			'look-around': 'look-around 6s ease-in-out infinite'
   		}
   	}
   },

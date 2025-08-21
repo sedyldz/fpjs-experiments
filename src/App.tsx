@@ -3,6 +3,7 @@ import { AIChat } from './components/AIChat';
 import { Overview } from './components/Overview';
 import { Identification } from './components/Identification';
 import { Button } from './components/ui/button';
+import { parseCSVData, transformCSVToEvents } from './utils/csvParser';
 import { 
   Compass, 
   Home, 
@@ -42,37 +43,62 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState<'overview' | 'identification'>('overview');
+  const [chatInitialMessage, setChatInitialMessage] = useState<string>('');
+  
+  // Add boolean flag to choose between CSV and live events
+  const [useCSVData, setUseCSVData] = useState<boolean>(true);
+
+  const openChatWithMessage = (message: string) => {
+    setChatInitialMessage(message);
+    setIsChatOpen(true);
+  };
 
   useEffect(() => {
-    // Fetch live events from our server-side API
-    const fetchEvents = async () => {
+    const loadData = async () => {
       try {
         setLoading(true);
         
-        const response = await fetch('http://localhost:3001/api/events?limit=100');
-        
-        if (!response.ok) {
-          throw new Error(`Server error: ${response.status} ${response.statusText}`);
-        }
-        
-        const result = await response.json();
-        
-        if (result.success) {
-          setEvents(result.data);
+        if (useCSVData) {
+          // Load CSV data
+          const response = await fetch('/elvo.csv');
+          
+          if (!response.ok) {
+            throw new Error(`Failed to load CSV file: ${response.status} ${response.statusText}`);
+          }
+          
+          const csvText = await response.text();
+          const csvData = parseCSVData(csvText);
+          const transformedEvents = transformCSVToEvents(csvData);
+          
+          setEvents(transformedEvents);
           setError(null);
         } else {
-          throw new Error(result.error || 'Failed to fetch events');
+          // Fetch live events from our server-side API
+          const response = await fetch('http://localhost:3001/api/events?limit=100');
+          
+          if (!response.ok) {
+            throw new Error(`Server error: ${response.status} ${response.statusText}`);
+          }
+          
+          const result = await response.json();
+          
+          if (result.success) {
+            setEvents(result.data);
+            setError(null);
+          } else {
+            throw new Error(result.error || 'Failed to fetch events');
+          }
         }
       } catch (err) {
-        console.error('Error fetching events:', err);
+        console.error('Error loading data:', err);
         setError(err instanceof Error ? err.message : 'Unknown error');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchEvents();
-  }, []);
+    loadData();
+  }, [useCSVData]);
 
   const navigationItems = [
     { icon: Compass, label: 'Get started', active: false },
@@ -94,7 +120,9 @@ function App() {
     return (
       <div className="flex h-screen bg-gray-50">
         <div className="flex items-center justify-center w-full">
-          <div className="text-lg text-gray-600">Loading live events...</div>
+          <div className="text-lg text-gray-600">
+            Loading {useCSVData ? 'CSV data' : 'live events'}...
+          </div>
         </div>
       </div>
     );
@@ -106,10 +134,13 @@ function App() {
         <div className="flex items-center justify-center w-full">
           <div className="bg-red-50 border border-red-200 rounded-lg p-4">
             <div className="text-red-800">
-              <strong>Error loading events:</strong> {error}
+              <strong>Error loading {useCSVData ? 'CSV data' : 'live events'}:</strong> {error}
             </div>
             <div className="text-sm text-red-600 mt-2">
-              Make sure VITE_FP_SECRET_KEY is set in your .env file.
+              {useCSVData 
+                ? 'Make sure the CSV file is available in the public directory.'
+                : 'Make sure VITE_FP_SECRET_KEY is set in your .env file and the server is running.'
+              }
             </div>
           </div>
         </div>
@@ -163,7 +194,35 @@ function App() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
         {/* Top Header */}
-        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-end px-6">
+        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6">
+          {/* Data Source Toggle */}
+          <div className="flex items-center space-x-4">
+            <span className="text-sm text-gray-600">Data Source:</span>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setUseCSVData(true)}
+                className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                  useCSVData
+                    ? 'bg-blue-100 text-blue-700 font-medium'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                CSV Data
+              </button>
+              <button
+                onClick={() => setUseCSVData(false)}
+                className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                  !useCSVData
+                    ? 'bg-blue-100 text-blue-700 font-medium'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                Live Events
+              </button>
+            </div>
+          </div>
+          
+          {/* Right side navigation */}
           <div className="flex items-center space-x-6 text-sm">
             <a href="#" className="text-gray-600 hover:text-gray-900">Share feedback</a>
             <a href="#" className="text-gray-600 hover:text-gray-900">Ask AI</a>
@@ -178,7 +237,7 @@ function App() {
         {/* Main Content Area */}
         <main className="flex-1 bg-white p-6 overflow-auto">
           {currentPage === 'overview' ? (
-            <Overview events={events} />
+            <Overview events={events} onOpenChat={(insight) => openChatWithMessage(insight)} />
           ) : (
             <Identification events={events} onOpenChat={() => setIsChatOpen(true)} />
           )}
@@ -190,6 +249,7 @@ function App() {
         isOpen={isChatOpen} 
         onClose={() => setIsChatOpen(false)}
         csvData={events}
+        initialMessage={chatInitialMessage}
       />
     </div>
   );

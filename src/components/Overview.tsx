@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { 
   LineChart, 
   Line, 
@@ -7,12 +7,14 @@ import {
   CartesianGrid, 
   Tooltip, 
   ResponsiveContainer,
-  BarChart,
-  Bar
+
 } from 'recharts';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
 import { 
   ChevronDown, 
   Calendar,
@@ -20,7 +22,7 @@ import {
   TrendingUp,
   AlertTriangle,
   Eye,
-  Lightbulb,
+
   RefreshCw
 } from 'lucide-react';
 
@@ -44,20 +46,58 @@ interface FingerprintEvent {
 
 interface OverviewProps {
   events: FingerprintEvent[];
+  onOpenChat?: (insight: string) => void;
 }
 
-export function Overview({ events }: OverviewProps) {
+export function Overview({ events, onOpenChat }: OverviewProps) {
   const [timeGranularity, setTimeGranularity] = useState<'hourly' | 'daily' | 'monthly'>('daily');
   const [environment, setEnvironment] = useState('Any environment');
   const [dateRange, setDateRange] = useState('Last 7 days');
   const [smartInsight, setSmartInsight] = useState<string>('');
   const [insightLoading, setInsightLoading] = useState<boolean>(false);
   const [insightError, setInsightError] = useState<string | null>(null);
+  const [hasGeneratedInsight, setHasGeneratedInsight] = useState<boolean>(false);
+  const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
+  const [eyeContainerRef, setEyeContainerRef] = useState<HTMLDivElement | null>(null);
 
-  // Generate smart insight when component loads
+  // Track cursor position
+  useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      setCursorPosition({ x: event.clientX, y: event.clientY });
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
+  // Calculate eye movement based on cursor position
+  const getEyeMovement = () => {
+    if (!eyeContainerRef) return { left: 0, right: 0 };
+    
+    const rect = eyeContainerRef.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    
+    // Calculate distance from center (max 3px movement)
+    const deltaX = (cursorPosition.x - centerX) / 50;
+    const deltaY = (cursorPosition.y - centerY) / 50;
+    
+    // Clamp the movement to reasonable bounds
+    const maxMovement = 1.5;
+    const leftX = Math.max(-maxMovement, Math.min(maxMovement, deltaX));
+    const rightX = Math.max(-maxMovement, Math.min(maxMovement, deltaX));
+    const leftY = Math.max(-maxMovement, Math.min(maxMovement, deltaY));
+    const rightY = Math.max(-maxMovement, Math.min(maxMovement, deltaY));
+    
+    return { leftX, leftY, rightX, rightY };
+  };
+
+  const eyeMovement = getEyeMovement();
+
+  // Generate smart insight when component loads (only once)
   useEffect(() => {
     const generateInsight = async () => {
-      if (events.length > 0) {
+      if (events.length > 0 && !hasGeneratedInsight && !insightLoading) {
         setInsightLoading(true);
         setInsightError(null);
         
@@ -67,7 +107,7 @@ export function Overview({ events }: OverviewProps) {
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ events: events.slice(-100) }) // Send last 100 events
+            body: JSON.stringify({ events: events }) // Send all events
           });
           
           if (!response.ok) {
@@ -78,6 +118,7 @@ export function Overview({ events }: OverviewProps) {
           
           if (result.success) {
             setSmartInsight(result.insight);
+            setHasGeneratedInsight(true);
           } else {
             setInsightError(result.error || 'Failed to generate insight');
           }
@@ -91,49 +132,72 @@ export function Overview({ events }: OverviewProps) {
     };
 
     generateInsight();
-  }, [events]);
+  }, [events.length, hasGeneratedInsight, insightLoading]);
 
   // Calculate insights from events data
   const totalUsage = events.length;
-  const uniqueVisitors = new Set(events.map(e => e.visitorId)).size;
-  const eventsPerVisitor = totalUsage / uniqueVisitors;
+  const uniqueVisitors = new Set(events.map(e => e.visitorId).filter(Boolean)).size;
+  const eventsPerVisitor = uniqueVisitors > 0 ? totalUsage / uniqueVisitors : 0;
 
   // Calculate changes (mock data for now)
   const usageChange = -64;
   const visitorsChange = -48;
   const eventsPerVisitorChange = -31;
 
-  // Generate chart data for API usage
-  const generateChartData = () => {
+  // Generate chart data for API usage based on actual data
+  const chartData = useMemo(() => {
     const now = new Date();
     const data = [];
+    
+    // Group events by date
+    const eventsByDate = events.reduce((acc, event) => {
+      const eventDate = new Date(event.date);
+      const dateKey = eventDate.toDateString();
+      acc[dateKey] = (acc[dateKey] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    // Calculate average daily usage for realistic defaults
+    const totalEvents = events.length;
+    const averageDailyUsage = Math.max(10, Math.floor(totalEvents / 7));
     
     for (let i = 6; i >= 0; i--) {
       const date = new Date(now);
       date.setDate(date.getDate() - i);
+      const dateKey = date.toDateString();
       
-      // Generate realistic usage data
-      const baseUsage = Math.floor(Math.random() * 200) + 100;
-      const currentPeriodUsage = Math.floor(baseUsage * (1 + Math.random() * 0.5));
-      const previousPeriodUsage = Math.floor(baseUsage * (1 + Math.random() * 0.3));
+      // Get actual usage for this date, or use a realistic default
+      const currentUsage = eventsByDate[dateKey] || Math.floor(averageDailyUsage * (0.5 + Math.random() * 0.5));
+      
+      // For previous period, use a consistent variation
+      const variation = 0.7 + (Math.sin(i * 0.5) * 0.3); // Smooth variation
+      const previousUsage = Math.floor(currentUsage * variation);
       
       data.push({
         date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        current: currentPeriodUsage,
-        previous: previousPeriodUsage,
+        current: currentUsage,
+        previous: previousUsage,
       });
     }
     
     return data;
-  };
-
-  const chartData = generateChartData();
+  }, [events.length]); // Only recalculate when events change
 
   // Generate top origins data
   const getTopOrigins = () => {
     const origins = events.reduce((acc, event) => {
-      const origin = new URL(event.url).origin;
-      acc[origin] = (acc[origin] || 0) + 1;
+      try {
+        // Skip empty or invalid URLs
+        if (!event.url || event.url.trim() === '') {
+          return acc;
+        }
+        
+        const origin = new URL(event.url).origin;
+        acc[origin] = (acc[origin] || 0) + 1;
+      } catch (error) {
+        // Skip invalid URLs
+        console.warn('Skipping invalid URL:', event.url);
+      }
       return acc;
     }, {} as Record<string, number>);
 
@@ -146,7 +210,8 @@ export function Overview({ events }: OverviewProps) {
   // Generate top browsers data
   const getTopBrowsers = () => {
     const browsers = events.reduce((acc, event) => {
-      acc[event.browser] = (acc[event.browser] || 0) + 1;
+      const browser = event.browser || 'Unknown';
+      acc[browser] = (acc[browser] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
 
@@ -159,7 +224,8 @@ export function Overview({ events }: OverviewProps) {
   // Generate top countries data
   const getTopCountries = () => {
     const countries = events.reduce((acc, event) => {
-      acc[event.country] = (acc[event.country] || 0) + 1;
+      const country = event.country || 'Unknown';
+      acc[country] = (acc[country] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
 
@@ -169,9 +235,18 @@ export function Overview({ events }: OverviewProps) {
       .map(([country, count]) => ({ country, count }));
   };
 
-  const topOrigins = getTopOrigins();
-  const topBrowsers = getTopBrowsers();
-  const topCountries = getTopCountries();
+  const topOrigins = useMemo(() => getTopOrigins(), [events]);
+  const topBrowsers = useMemo(() => getTopBrowsers(), [events]);
+  const topCountries = useMemo(() => getTopCountries(), [events]);
+
+  // Debug logging
+  console.log('Chart Data Debug:', {
+    totalEvents: events.length,
+    uniqueVisitors,
+    eventsPerVisitor,
+    chartDataLength: chartData.length,
+    sampleChartData: chartData.slice(0, 3)
+  });
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -180,80 +255,7 @@ export function Overview({ events }: OverviewProps) {
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Overview</h1>
       </div>
 
-      {/* Smart Insight Section */}
-      <div className="mb-8">
-        <Card className="border-l-4 border-l-blue-500">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Lightbulb className="h-5 w-5 text-blue-500" />
-                <CardTitle className="text-lg font-semibold text-gray-900">AI Smart Insight</CardTitle>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={async () => {
-                  setInsightLoading(true);
-                  setInsightError(null);
-                  
-                  try {
-                    const response = await fetch('http://localhost:3001/api/smart-insight', {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                      },
-                      body: JSON.stringify({ events: events.slice(-100) })
-                    });
-                    
-                    if (!response.ok) {
-                      throw new Error(`Server error: ${response.status}`);
-                    }
-                    
-                    const result = await response.json();
-                    
-                    if (result.success) {
-                      setSmartInsight(result.insight);
-                    } else {
-                      setInsightError(result.error || 'Failed to generate insight');
-                    }
-                  } catch (error) {
-                    console.error('Error generating smart insight:', error);
-                    setInsightError(error instanceof Error ? error.message : 'Unknown error');
-                  } finally {
-                    setInsightLoading(false);
-                  }
-                }}
-                disabled={insightLoading}
-                className="flex items-center space-x-1"
-              >
-                <RefreshCw className={`h-4 w-4 ${insightLoading ? 'animate-spin' : ''}`} />
-                <span>Refresh</span>
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {insightLoading ? (
-              <div className="flex items-center space-x-2 text-gray-600">
-                <RefreshCw className="h-4 w-4 animate-spin" />
-                <span>Generating AI insight...</span>
-              </div>
-            ) : insightError ? (
-              <div className="text-red-600 bg-red-50 p-3 rounded-md">
-                <div className="font-medium">Error generating insight:</div>
-                <div className="text-sm">{insightError}</div>
-              </div>
-            ) : smartInsight ? (
-              <div className="text-gray-700 leading-relaxed">
-                {smartInsight}
-              </div>
-            ) : (
-              <div className="text-gray-500 italic">
-                No insight available. Click refresh to generate a new insight.
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+    
 
       {/* Subscription Overview */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
@@ -288,15 +290,17 @@ export function Overview({ events }: OverviewProps) {
               <AlertTriangle className="h-3 w-3 mr-1" />
               Minor issues found
             </Badge>
-            <a href="#" className="text-xs text-blue-600 hover:text-blue-800">View health &gt;</a>
+           
           </div>
         </div>
       </div>
 
       {/* Insights Section */}
       <div className="mb-8">
+        
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-gray-900">Insights</h2>
+          
           <div className="flex items-center space-x-3">
             <Button variant="outline" size="sm" className="border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
               {environment}
@@ -309,6 +313,165 @@ export function Overview({ events }: OverviewProps) {
             </Button>
           </div>
         </div>
+
+  {/* Smart Insight Section */}
+  <div className="mb-8">
+        <Card className=" relative overflow-hidden border-transparent shadow-none">
+          {/* Grained gradient background */}
+          <div className="absolute inset-0 bg-gradient-to-br from-pink-200 via-orange-100 to-orange-50 opacity-70"></div>
+          {/* Grain overlay */}
+          <div className="absolute inset-0 opacity-20" style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
+            backgroundSize: '200px 200px'
+          }}></div>
+          {/* Content wrapper */}
+          <div className="relative z-10">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                {/* Clippy Mascot */}
+                <div className="relative" ref={setEyeContainerRef}>
+                <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-orange-500 rounded-full flex items-center justify-center ">
+                {/* Eyes */}
+                    <div className={`flex space-x-1 ${insightLoading ? 'animate-look-around' : ''}`}>
+                      <div 
+                        className="w-1.5 h-1.5 bg-black rounded-full animate-natural-blink relative"
+                        style={{
+                          transform: `translate(${eyeMovement.leftX}px, ${eyeMovement.leftY}px)`,
+                          transition: 'transform 0.1s ease-out'
+                        }}
+                      ></div>
+                      <div 
+                        className="w-1.5 h-1.5 bg-black rounded-full animate-natural-blink relative"
+                        style={{
+                          transform: `translate(${eyeMovement.rightX}px, ${eyeMovement.rightY}px)`,
+                          transition: 'transform 0.1s ease-out'
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                 
+                  <CardTitle className="text-lg font-semibold text-gray-900">Insights by Fingerprint AI</CardTitle>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  setInsightLoading(true);
+                  setInsightError(null);
+                  setHasGeneratedInsight(false);
+                  
+                  try {
+                    const response = await fetch('http://localhost:3001/api/smart-insight', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({ events: events })
+                    });
+                    
+                    if (!response.ok) {
+                      throw new Error(`Server error: ${response.status}`);
+                    }
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                      setSmartInsight(result.insight);
+                      setHasGeneratedInsight(true);
+                    } else {
+                      setInsightError(result.error || 'Failed to generate insight');
+                    }
+                  } catch (error) {
+                    console.error('Error generating smart insight:', error);
+                    setInsightError(error instanceof Error ? error.message : 'Unknown error');
+                  } finally {
+                    setInsightLoading(false);
+                  }
+                }}
+                disabled={insightLoading}
+                className="flex items-center space-x-1 bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-200 hover:border-orange-300"
+              >
+                <RefreshCw className={`h-4 w-4 ${insightLoading ? 'animate-spin' : ''}`} />
+                <span>Generate New Insight</span>
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {insightLoading ? (
+              <div className="flex items-center space-x-2 text-gray-700">
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                <span>Generating insight...</span>
+              </div>
+            ) : insightError ? (
+              <div className="text-red-300 bg-red-900/20 p-3 rounded-md border border-red-500/30">
+                <div className="font-medium">Error generating insight:</div>
+                <div className="text-sm">{insightError}</div>
+              </div>
+            ) : smartInsight ? (
+              <div className="space-y-4">
+                <div className="text-gray-800 leading-relaxed prose prose-sm max-w-none">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{smartInsight}</ReactMarkdown>
+                </div>
+                
+                {/* Follow-up Questions */}
+                {onOpenChat && (
+                  <div className="pt-3 border-t border-orange-200">
+                    <div className="text-sm font-medium text-gray-800 mb-3">Ask me more about this:</div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => onOpenChat(`Analyze the security threats in detail: ${smartInsight}`)}
+                        className="px-3 py-1.5 text-xs bg-orange-100 text-orange-700 rounded-full hover:bg-orange-200 transition-colors border border-orange-200"
+                      >
+                        Analyze threats
+                      </button>
+                      <button
+                        onClick={() => onOpenChat(`Show me VPN and bot detection patterns: ${smartInsight}`)}
+                        className="px-3 py-1.5 text-xs bg-orange-100 text-orange-700 rounded-full hover:bg-orange-200 transition-colors border border-orange-200"
+                      >
+                        VPN & Bot patterns
+                      </button>
+                      <button
+                        onClick={() => onOpenChat(`What security measures should I implement? ${smartInsight}`)}
+                        className="px-3 py-1.5 text-xs bg-orange-100 text-orange-700 rounded-full hover:bg-orange-200 transition-colors border border-orange-200"
+                      >
+                        Security measures
+                      </button>
+                      <button
+                        onClick={() => onOpenChat(`Show me geographic fraud patterns: ${smartInsight}`)}
+                        className="px-3 py-1.5 text-xs bg-orange-100 text-orange-700 rounded-full hover:bg-orange-200 transition-colors border border-orange-200"
+                      >
+                        Geographic patterns
+                      </button>
+                      <button
+                        onClick={() => onOpenChat(`What are the risk levels and recommendations? ${smartInsight}`)}
+                        className="px-3 py-1.5 text-xs bg-orange-100 text-orange-700 rounded-full hover:bg-orange-200 transition-colors border border-orange-200" 
+                      >
+                        Risk assessment
+                      </button>
+                      <button
+                        onClick={() => onOpenChat(`Compare with previous security incidents: ${smartInsight}`)}
+                        className="px-3 py-1.5 text-xs bg-orange-100 text-orange-700 rounded-full hover:bg-orange-200 transition-colors border border-orange-200"
+                      >
+                        Historical comparison
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-gray-600 italic">
+                No insight available. Click refresh to generate a new insight.
+              </div>
+            )}
+          </CardContent>
+          </div>
+        </Card>
+      </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card>

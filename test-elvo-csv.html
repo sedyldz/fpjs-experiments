@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elvo CSV Data Test</title>
+</head>
+<body>
+    <h1>Elvo CSV Data Test</h1>
+    <div id="status">Loading...</div>
+    <div id="data"></div>
+
+    <script>
+        async function testElvoCSVLoading() {
+            try {
+                const response = await fetch('/elvo.csv');
+                if (!response.ok) {
+                    throw new Error(`Failed to load Elvo CSV: ${response.status}`);
+                }
+                
+                const csvText = await response.text();
+                const lines = csvText.trim().split('\n');
+                const headers = lines[0].split(',');
+                const data = lines.slice(1).map(line => {
+                    const values = line.split(',');
+                    const row = {};
+                    headers.forEach((header, index) => {
+                        row[header] = values[index] || '';
+                    });
+                    return row;
+                });
+
+                // Test URL validation
+                const urlTest = data.slice(0, 10).map(row => {
+                    const url = row.url;
+                    let isValid = false;
+                    let error = null;
+                    try {
+                        if (url && url.trim() !== '') {
+                            new URL(url);
+                            isValid = true;
+                        }
+                    } catch (e) {
+                        error = e.message;
+                    }
+                    return { url, isValid, error };
+                });
+
+                document.getElementById('status').innerHTML = `✅ Elvo CSV loaded successfully! Found ${data.length} records.`;
+                document.getElementById('data').innerHTML = `
+                    <h3>Sample Records:</h3>
+                    <p><strong>Total Records:</strong> ${data.length}</p>
+                    <p><strong>Available Fields:</strong> ${headers.length}</p>
+                    <h4>URL Validation Test (first 10 records):</h4>
+                    <table border="1" style="border-collapse: collapse; margin: 10px 0;">
+                        <tr><th>URL</th><th>Valid</th><th>Error</th></tr>
+                        ${urlTest.map(test => `
+                            <tr>
+                                <td style="padding: 5px; max-width: 300px; word-break: break-all;">${test.url}</td>
+                                <td style="padding: 5px;">${test.isValid ? '✅' : '❌'}</td>
+                                <td style="padding: 5px; color: red;">${test.error || ''}</td>
+                            </tr>
+                        `).join('')}
+                    </table>
+                    <h4>Field Analysis:</h4>
+                    <ul>
+                        <li>Countries: ${new Set(data.map(r => r['ipLocation.country.name']).filter(Boolean)).size} unique</li>
+                        <li>Browsers: ${new Set(data.map(r => r['browserDetails.browserName']).filter(Boolean)).size} unique</li>
+                        <li>Operating Systems: ${new Set(data.map(r => r['browserDetails.os']).filter(Boolean)).size} unique</li>
+                        <li>Date Range: ${new Date(Math.min(...data.map(r => new Date(r.time || r.timestamp)))).toLocaleDateString()} to ${new Date(Math.max(...data.map(r => new Date(r.time || r.timestamp)))).toLocaleDateString()}</li>
+                    </ul>
+                `;
+            } catch (error) {
+                document.getElementById('status').innerHTML = `❌ Error: ${error.message}`;
+            }
+        }
+
+        testElvoCSVLoading();
+    </script>
+</body>
+</html>

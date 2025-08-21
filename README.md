@@ -1,12 +1,13 @@
 # FingerprintJS AI Analytics Assistant
 
-A powerful AI-powered analytics dashboard for FingerprintJS visitor identification data. This application provides intelligent insights into visitor patterns, security threats, geographic distribution, and more using advanced AI analysis.
+A powerful AI-powered analytics dashboard for FingerprintJS visitor identification data. This application provides intelligent insights into visitor patterns, security threats, geographic distribution, and more using advanced AI analysis. The application supports both CSV data analysis and live events from the FingerprintJS API.
 
 ## Features
 
 ### 📊 Dashboard Pages
-- **Overview Page**: Subscription status, insights cards, API usage charts, and top metrics (origins, browsers, countries)
+- **Overview Page**: Subscription status, insights cards, data usage charts, and top metrics (origins, browsers, countries)
 - **Identification Page**: Detailed event table with visitor data and AI analysis capabilities
+- **Data Source Toggle**: Switch between CSV data analysis and live events from FingerprintJS API
 
 ### 🤖 Dual AI Provider System
 - **Local AI (Ollama)**: Run AI analysis locally with Ollama models
@@ -41,13 +42,15 @@ Create a `.env` file in the root directory with the following variables:
 
 #### Basic Configuration
 ```env
-# FingerprintJS API Key
-FP_SECRET_KEY=your_fingerprintjs_secret_key_here
-
 # AI Provider Configuration
 # Options: 'ollama', 'openai', or 'fallback' (default: 'fallback')
 AI_PROVIDER=ollama
+
+# FingerprintJS API Key (only required for live events)
+FP_SECRET_KEY=your_fingerprintjs_secret_key_here
 ```
+
+**Note**: The API key is only required if you want to use live events. CSV data analysis works without any API key.
 
 #### For Local AI (Ollama)
 ```env
@@ -90,7 +93,18 @@ OPENAI_MODEL=gpt-4
 AI_PROVIDER=fallback
 ```
 
-### 4. Start the Application
+### 4. Data Source Setup
+
+#### Option A: CSV Data (Recommended for testing)
+The application automatically loads the Elvo CSV file (`elvo.csv`) from the `public/` directory. This contains 10,847 records of FingerprintJS identification data for comprehensive analysis.
+
+#### Option B: Live Events
+If you want to use live events from the FingerprintJS API:
+1. Set your `FP_SECRET_KEY` in the `.env` file
+2. Start the backend server: `npm run server`
+3. Use the "Live Events" toggle in the application
+
+### 5. Start the Application
 ```bash
 # Start both server and frontend
 npm run dev:full
@@ -105,7 +119,7 @@ npm run dev     # Frontend on port 5173
 ### Multi-Provider AI Pipeline
 The AI system supports multiple providers with automatic fallback:
 
-1. **AI Service** (`src/services/aiService.js`)
+1. **AI Service** (`src/services/aiService.ts`)
    - Supports Ollama (local) and OpenAI (cloud) providers
    - Automatic provider selection based on environment
    - Graceful fallback to rule-based analysis
@@ -184,11 +198,10 @@ GET /api/ai/status
 ```
 Returns current AI provider configuration and availability.
 
-### FingerprintJS Events
-```
-GET /api/events?startDate=&endDate=&limit=
-```
-Fetches visitor identification events from FingerprintJS API.
+### Data Source Management
+The application supports two data sources:
+- **CSV Data**: Automatically loads CSV data from the public directory and transforms it into the expected format for analysis
+- **Live Events**: Fetches real-time data from the FingerprintJS API via the backend server
 
 ### AI Analysis
 ```
@@ -206,8 +219,8 @@ Performs AI analysis on the provided data and question.
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `FP_SECRET_KEY` | FingerprintJS API key | - | Yes |
 | `AI_PROVIDER` | AI provider: 'ollama', 'openai', 'fallback' | 'fallback' | No |
+| `FP_SECRET_KEY` | FingerprintJS API key (for live events) | - | For live events |
 | `OLLAMA_HOST` | Ollama server URL | 'http://localhost:11434' | For Ollama |
 | `OLLAMA_MODEL` | Ollama model name | 'llama3.2' | For Ollama |
 | `OPENAI_API_KEY` | OpenAI API key | - | For OpenAI |

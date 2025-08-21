@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV Data Test</title>
+</head>
+<body>
+    <h1>CSV Data Test</h1>
+    <div id="status">Loading...</div>
+    <div id="data"></div>
+
+    <script>
+        async function testCSVLoading() {
+            try {
+                const response = await fetch('/elvo.csv');
+                if (!response.ok) {
+                    throw new Error(`Failed to load CSV: ${response.status}`);
+                }
+                
+                const csvText = await response.text();
+                const lines = csvText.trim().split('\n');
+                const headers = lines[0].split(',');
+                const data = lines.slice(1).map(line => {
+                    const values = line.split(',');
+                    const row = {};
+                    headers.forEach((header, index) => {
+                        row[header] = values[index] || '';
+                    });
+                    return row;
+                });
+
+                document.getElementById('status').innerHTML = `✅ CSV loaded successfully! Found ${data.length} records.`;
+                document.getElementById('data').innerHTML = `
+                    <h3>First 3 records:</h3>
+                    <pre>${JSON.stringify(data.slice(0, 3), null, 2)}</pre>
+                `;
+            } catch (error) {
+                document.getElementById('status').innerHTML = `❌ Error: ${error.message}`;
+            }
+        }
+
+        testCSVLoading();
+    </script>
+</body>
+</html>

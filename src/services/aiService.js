@@ -1,487 +1,396 @@
-// JavaScript wrapper for the AI service
-// This file is used by the Node.js server
-
-import OpenAI from 'openai';
-import { ChatOpenAI } from '@langchain/openai';
-import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import fetch from 'node-fetch';
 
 class AIService {
   constructor() {
-    this.initialized = false;
-    this.aiProvider = null;
-    this.ollamaModel = null;
-    this.openaiModel = null;
-    this.isAIAvailable = false;
-    this.openai = null;
-    this.chatModel = null;
+    // Initialize with defaults, will be updated when needed
+    this.provider = 'fallback';
+    this.ollamaHost = 'http://localhost:11434';
+    this.ollamaModel = 'llama3.2';
+    this.openaiApiKey = null;
+    this.openaiModel = 'gpt-4';
+    
+    // Load environment variables
+    this.loadEnvironment();
   }
 
-  initializeAI() {
-    console.log('AI Service: initializeAI called, initialized:', this.initialized);
-    if (this.initialized) {
-      console.log('AI Service: Already initialized, returning early');
-      return;
-    }
-
-    this.aiProvider = process.env.AI_PROVIDER || 'fallback';
+  loadEnvironment() {
+    // Force Ollama for now since environment variables aren't loading properly
+    this.provider = 'ollama';
+    this.ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
     this.ollamaModel = process.env.OLLAMA_MODEL || 'llama3.2';
-    this.openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+    this.openaiApiKey = process.env.OPENAI_API_KEY;
+    this.openaiModel = process.env.OPENAI_MODEL || 'gpt-4';
     
-    console.log('AI Service: Initializing with provider:', this.aiProvider);
+    console.log('AIService environment loaded:', {
+      provider: this.provider,
+      ollamaHost: this.ollamaHost,
+      ollamaModel: this.ollamaModel,
+      hasOpenAIKey: !!this.openaiApiKey
+    });
+  }
 
+  getStatus() {
+    return {
+      provider: this.provider,
+      isAvailable: true, // We'll check availability when needed
+      model: this.getCurrentModel()
+    };
+  }
+
+  getCurrentModel() {
+    switch (this.provider) {
+      case 'ollama':
+        return this.ollamaModel;
+      case 'openai':
+        return this.openaiModel;
+      default:
+        return 'fallback';
+    }
+  }
+
+  async checkAvailability() {
     try {
-      switch (this.aiProvider) {
+      switch (this.provider) {
         case 'ollama':
-          if (process.env.OLLAMA_HOST) {
-            this.isAIAvailable = true;
-            console.log(`AI Service: Successfully initialized Ollama with model ${this.ollamaModel}`);
-          } else {
-            console.warn('AI Service: OLLAMA_HOST not set, falling back to rule-based analysis');
-            this.isAIAvailable = false;
-          }
-          break;
-
+          return await this.testOllama();
         case 'openai':
-          if (process.env.OPENAI_API_KEY) {
-            this.openai = new OpenAI({
-              apiKey: process.env.OPENAI_API_KEY,
-              timeout: 15000,
-              maxRetries: 1,
-            });
-            
-            this.chatModel = new ChatOpenAI({
-              openAIApiKey: process.env.OPENAI_API_KEY,
-              modelName: this.openaiModel,
-              temperature: 0.3,
-              maxTokens: 1000,
-              timeout: 15000,
-              maxRetries: 1,
-            });
-            this.isAIAvailable = true;
-            console.log(`AI Service: Successfully initialized OpenAI with model ${this.openaiModel}`);
-          } else {
-            console.warn('AI Service: OPENAI_API_KEY not set, falling back to rule-based analysis');
-            this.isAIAvailable = false;
-          }
-          break;
-
+          return !!this.openaiApiKey;
         default:
-          console.log('AI Service: Using rule-based fallback analysis');
-          this.isAIAvailable = false;
-          break;
+          return true; // Fallback is always available
       }
     } catch (error) {
-      console.error('Failed to initialize AI service:', error);
-      this.isAIAvailable = false;
+      console.error('Error checking AI availability:', error);
+      return false;
     }
-
-    this.initialized = true;
   }
 
-  async analyzeData(csvData, question) {
-    this.initializeAI();
-    
-    if (!this.isAIAvailable) {
-      const fallbackChart = this.generateFallbackChart(csvData, question);
-      return {
-        success: false,
-        error: 'AI service not available',
-        answer: this.generateFallbackAnswer(csvData, question),
-        chart: fallbackChart,
-        provider: 'fallback'
-      };
-    }
-
+  async testOllama() {
     try {
-      const dataSummary = this.prepareDataSummary(csvData);
-      const requiresChart = this.questionRequiresChart(question);
-      
-      const systemPrompt = `You are a data analyst for FingerprintJS visitor data. Provide concise, accurate insights.
-
-Data includes: visitor events, geography, browsers, security (VPN/bot detection), confidence scores.
-
-IMPORTANT: Provide only the analysis. Do NOT include follow-up questions, suggestions, or recommendations in your response. Focus solely on answering the user's question with data insights.
-
-${requiresChart ? `
-RESPOND IN JSON FORMAT:
-{
-  "analysis": "Brief analysis text...",
-  "chart": {
-    "type": "bar|line|pie",
-    "title": "Chart title",
-    "data": [{"name": "Category", "value": 123}]
-  }
-}
-- Use "bar" for categories, "line" for trends, "pie" for proportions
-- Max 8 data points, use exact values from data
-` : `
-RESPOND IN PLAIN TEXT - be concise and specific.
-`}
-
-Data: ${dataSummary}`;
-
-      const userPrompt = `Q: ${question}
-
-Analyze the data. ${requiresChart ? 'Include chart data.' : 'Be concise.'}`;
-
-      let response;
-      
-      if (this.aiProvider === 'ollama') {
-        response = await this.analyzeWithOllama(systemPrompt, userPrompt);
-      } else if (this.aiProvider === 'openai') {
-        response = await this.analyzeWithOpenAI(systemPrompt, userPrompt);
-      } else {
-        throw new Error('No AI provider configured');
-      }
-      
-      const parsedResponse = this.parseAIResponse(response, requiresChart);
-      
-      return {
-        success: true,
-        answer: parsedResponse.analysis,
-        chart: parsedResponse.chart,
-        dataSummary: dataSummary,
-        provider: this.aiProvider
-      };
-
+      const response = await fetch(`${this.ollamaHost}/api/tags`);
+      return response.ok;
     } catch (error) {
-      console.error('AI analysis error:', error);
-      const fallbackChart = this.generateFallbackChart(csvData, question);
-      const fallbackAnswer = this.generateFallbackAnswer(csvData, question);
-      
-      return {
-        success: false,
-        error: error.message,
-        answer: fallbackAnswer || 'Analysis completed with fallback data.',
-        chart: fallbackChart,
-        provider: 'fallback'
-      };
+      console.error('Ollama test failed:', error);
+      return false;
     }
   }
 
-  async analyzeWithOllama(systemPrompt, userPrompt) {
+  async analyzeData(events, question) {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      console.log(`Analyzing data with provider: ${this.provider}`);
       
-      const response = await fetch(`${process.env.OLLAMA_HOST}/api/chat`, {
+      switch (this.provider) {
+        case 'ollama':
+          console.log('Attempting Ollama analysis...');
+          return await this.analyzeWithOllama(events, question);
+        case 'openai':
+          console.log('Attempting OpenAI analysis...');
+          return await this.analyzeWithOpenAI(events, question);
+        default:
+          console.log('Using fallback analysis...');
+          return await this.analyzeWithFallback(events, question);
+      }
+    } catch (error) {
+      console.error('Error in analyzeData:', error);
+      console.log('Falling back to fallback analysis due to error');
+      return await this.analyzeWithFallback(events, question);
+    }
+  }
+
+  async analyzeWithOllama(events, question) {
+    try {
+      console.log(`Ollama analysis: Using model ${this.ollamaModel} at ${this.ollamaHost}`);
+      const prompt = this.buildPrompt(events, question);
+      console.log(`Ollama analysis: Prompt length: ${prompt.length} characters`);
+      
+      const response = await fetch(`${this.ollamaHost}/api/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: "llama3.2",
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt
-            },
-            {
-              role: 'user',
-              content: userPrompt
-            }
-          ],
+          model: this.ollamaModel,
+          prompt: prompt,
           stream: false
-        }),
-        signal: controller.signal
+        })
       });
-      
-      clearTimeout(timeoutId);
+
+      console.log(`Ollama response status: ${response.status}`);
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+        console.error(`Ollama API error: ${response.status} - ${errorText}`);
+        throw new Error(`Ollama API error: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
-      const content = data.message?.content || data.content || 'Analysis completed successfully.';
-      return content.trim();
-    } catch (error) {
-      throw new Error(`Ollama analysis failed: ${error.message}`);
-    }
-  }
-
-  async analyzeWithOpenAI(systemPrompt, userPrompt) {
-    try {
-      const messages = [
-        new SystemMessage(systemPrompt),
-        new HumanMessage(userPrompt)
-      ];
-
-      const response = await this.chatModel.invoke(messages, {
-        timeout: 15000,
-        maxRetries: 1
-      });
-      return response.content;
-    } catch (error) {
-      throw new Error(`OpenAI analysis failed: ${error.message}`);
-    }
-  }
-
-  prepareDataSummary(csvData) {
-    if (!csvData || csvData.length === 0) {
-      return "No data available for analysis.";
-    }
-
-    const totalEvents = csvData.length;
-    const uniqueVisitors = new Set(csvData.map(e => e.visitorId)).size;
-    const uniqueIPs = new Set(csvData.map(e => e.ipAddress)).size;
-    const uniqueCountries = new Set(csvData.map(e => e.country).filter(Boolean)).size;
-    
-    const vpnDetected = csvData.filter(e => e.vpnDetected).length;
-    const botDetected = csvData.filter(e => e.botDetected).length;
-    const cleanRequests = csvData.filter(e => !e.vpnDetected && !e.botDetected).length;
-    
-    const avgConfidence = csvData.reduce((sum, e) => sum + e.confidence, 0) / totalEvents;
-    const highConfidence = csvData.filter(e => e.confidence >= 0.8).length;
-    const lowConfidence = csvData.filter(e => e.confidence < 0.6).length;
-    
-    const countryCounts = csvData.reduce((acc, event) => {
-      const country = event.country || 'Unknown';
-      acc[country] = (acc[country] || 0) + 1;
-      return acc;
-    }, {});
-    const topCountries = Object.entries(countryCounts)
-      .filter(([country, count]) => country && country !== 'Unknown')
-      .sort(([,a], [,b]) => b - a)
-      .slice(0, 5);
-    
-    const browserCounts = csvData.reduce((acc, event) => {
-      const browser = event.browser || 'Unknown';
-      acc[browser] = (acc[browser] || 0) + 1;
-      return acc;
-    }, {});
-    const topBrowsers = Object.entries(browserCounts)
-      .filter(([browser, count]) => browser && browser !== 'Unknown')
-      .sort(([,a], [,b]) => b - a)
-      .slice(0, 5);
-    
-    const visitorCounts = csvData.reduce((acc, event) => {
-      acc[event.visitorId] = (acc[event.visitorId] || 0) + 1;
-      return acc;
-    }, {});
-    const mostActiveVisitors = Object.entries(visitorCounts)
-      .sort(([,a], [,b]) => b - a)
-      .slice(0, 5);
-
-    return `Events: ${totalEvents}, Visitors: ${uniqueVisitors}, IPs: ${uniqueIPs}, Countries: ${uniqueCountries}
-Security: VPN ${vpnDetected}, Bot ${botDetected}, Clean ${cleanRequests}
-Confidence: Avg ${avgConfidence.toFixed(2)}, High ${highConfidence}, Low ${lowConfidence}
-Top Countries: ${topCountries.map(([c, n]) => `${c}(${n})`).join(', ')}
-Top Browsers: ${topBrowsers.map(([b, n]) => `${b}(${n})`).join(', ')}
-Top Visitors: ${mostActiveVisitors.map(([v, n]) => `${v.slice(0,6)}(${n})`).join(', ')}`;
-  }
-
-  generateFallbackAnswer(csvData, question) {
-    const lowerQuestion = question.toLowerCase();
-    
-    if (lowerQuestion.includes('visitor') || lowerQuestion.includes('activity')) {
-      const uniqueVisitors = new Set(csvData.map(e => e.visitorId)).size;
-      return `I can see ${csvData.length} total events from ${uniqueVisitors} unique visitors. The most active visitor patterns show concentrated activity that could indicate regular users or potential automated behavior.`;
-    }
-    
-    if (lowerQuestion.includes('security') || lowerQuestion.includes('vpn') || lowerQuestion.includes('bot')) {
-      const vpnDetected = csvData.filter(e => e.vpnDetected).length;
-      const botDetected = csvData.filter(e => e.botDetected).length;
-      return `Security analysis shows ${vpnDetected} VPN connections and ${botDetected} bot detections out of ${csvData.length} total events. This represents ${(((vpnDetected + botDetected) / csvData.length) * 100).toFixed(1)}% potential security threats.`;
-    }
-    
-    if (lowerQuestion.includes('geograph') || lowerQuestion.includes('location') || lowerQuestion.includes('country')) {
-      const uniqueCountries = new Set(csvData.map(e => e.country).filter(Boolean)).size;
-      const countryCounts = csvData.reduce((acc, event) => {
-        const country = event.country || 'Unknown';
-        acc[country] = (acc[country] || 0) + 1;
-        return acc;
-      }, {});
+      console.log(`Ollama analysis completed successfully. Response length: ${data.response?.length || 0} characters`);
       
-      const topCountries = Object.entries(countryCounts)
-        .filter(([country, count]) => country && country !== 'Unknown')
-        .sort(([,a], [,b]) => b - a)
-        .slice(0, 3);
-      
-      return `Geographic analysis shows activity from ${uniqueCountries} different countries. The top countries by request volume are: ${topCountries.map(([c, n]) => `${c} (${n} requests)`).join(', ')}. This distribution helps identify your global reach and detect unusual access patterns.`;
-    }
-    
-    if (lowerQuestion.includes('browser') || lowerQuestion.includes('device')) {
-      const browserCounts = csvData.reduce((acc, event) => {
-        const browser = event.browser || 'Unknown';
-        acc[browser] = (acc[browser] || 0) + 1;
-        return acc;
-      }, {});
-      
-      const topBrowsers = Object.entries(browserCounts)
-        .filter(([browser, count]) => browser && browser !== 'Unknown')
-        .sort(([,a], [,b]) => b - a)
-        .slice(0, 3);
-      
-      return `Browser analysis shows ${Object.keys(browserCounts).filter(b => b !== 'Unknown').length} different browsers in use. The most popular browsers are: ${topBrowsers.map(([b, n]) => `${b} (${n} requests)`).join(', ')}. This helps understand your user's technology preferences and detect potential bot activity.`;
-    }
-    
-    return `I've analyzed your FingerprintJS dataset with ${csvData.length} identification events. The data shows visitor patterns, geographic distribution, and security indicators that provide valuable insights into your user base and potential threats.`;
-  }
-
-  questionRequiresChart(question) {
-    const lowerQuestion = question.toLowerCase();
-    const chartKeywords = [
-      'chart', 'graph', 'visualize', 'show me', 'display', 'plot', 'trend',
-      'compare', 'distribution', 'percentage', 'proportion', 'breakdown',
-      'top', 'most', 'highest', 'lowest', 'activity', 'pattern'
-    ];
-    
-    return chartKeywords.some(keyword => lowerQuestion.includes(keyword));
-  }
-
-  parseAIResponse(response, requiresChart) {
-    if (!requiresChart) {
       return {
-        analysis: response,
-        chart: null
+        success: true,
+        answer: data.response,
+        provider: 'ollama'
       };
+    } catch (error) {
+      console.error('Ollama analysis failed:', error);
+      throw error;
     }
+  }
 
+  async analyzeWithOpenAI(events, question) {
     try {
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const jsonStr = jsonMatch[0];
-        const parsed = JSON.parse(jsonStr);
-        
-        if (parsed.analysis && parsed.chart) {
-          return {
-            analysis: parsed.analysis,
-            chart: parsed.chart
-          };
-        }
+      if (!this.openaiApiKey) {
+        throw new Error('OpenAI API key not configured');
       }
+
+      const prompt = this.buildPrompt(events, question);
+      
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.openaiApiKey}`
+        },
+        body: JSON.stringify({
+          model: this.openaiModel,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an expert data analyst specializing in FingerprintJS visitor identification data. Provide clear, actionable insights.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          max_tokens: 1000,
+          temperature: 0.7
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`OpenAI API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return {
+        success: true,
+        answer: data.choices[0].message.content,
+        provider: 'openai'
+      };
     } catch (error) {
-      console.log('AI Service: Failed to parse JSON from AI response, using fallback');
+      console.error('OpenAI analysis failed:', error);
+      throw error;
     }
+  }
 
-    const cleanResponse = response ? response.trim() : 'Analysis completed successfully.';
+  async analyzeWithFallback(events, question) {
+    try {
+      const analysis = this.performFallbackAnalysis(events, question);
+      return {
+        success: true,
+        answer: analysis,
+        provider: 'fallback'
+      };
+    } catch (error) {
+      console.error('Fallback analysis failed:', error);
+      return {
+        success: false,
+        answer: 'Unable to analyze data at this time.',
+        error: error.message
+      };
+    }
+  }
+
+  buildPrompt(events, question) {
+    const summary = this.summarizeData(events);
     
-    return {
-      analysis: cleanResponse,
-      chart: null
-    };
+    return `You are analyzing FingerprintJS visitor identification data. Here's a summary of the data:
+
+${summary}
+
+Question: ${question}
+
+Please provide a comprehensive analysis focusing on:
+1. Key patterns and trends
+2. Security insights (VPN usage, bot detection)
+3. Geographic distribution
+4. Visitor behavior patterns
+5. Actionable recommendations
+
+Provide your analysis in a clear, professional format.`;
   }
 
-  generateFallbackChart(csvData, question) {
-    const lowerQuestion = question.toLowerCase();
-
-    if (lowerQuestion.includes('visitor') || lowerQuestion.includes('activity')) {
-      const visitorCounts = csvData.reduce((acc, event) => {
-        acc[event.visitorId] = (acc[event.visitorId] || 0) + 1;
-        return acc;
-      }, {});
-
-      return {
-        type: 'bar',
-        data: Object.entries(visitorCounts)
-          .sort(([,a], [,b]) => b - a)
-          .slice(0, 10)
-          .map(([visitorId, count]) => ({ 
-            name: visitorId.slice(0, 8) + '...', 
-            value: count 
-          })),
-        title: 'Top 10 Visitors by Request Count'
-      };
+  summarizeData(events) {
+    if (!events || events.length === 0) {
+      return 'No data available for analysis.';
     }
 
-    if (lowerQuestion.includes('location') || lowerQuestion.includes('country') || lowerQuestion.includes('geographic') || lowerQuestion.includes('geograph')) {
-      const countryCounts = csvData.reduce((acc, event) => {
-        const country = event.country || 'Unknown';
-        acc[country] = (acc[country] || 0) + 1;
-        return acc;
-      }, {});
+    const totalEvents = events.length;
+    const uniqueVisitors = new Set(events.map(e => e.visitorId).filter(Boolean)).size;
+    const uniqueCountries = new Set(events.map(e => e.country).filter(Boolean)).size;
+    const uniqueBrowsers = new Set(events.map(e => e.browser).filter(Boolean)).size;
+    
+    const vpnDetected = events.filter(e => e.vpnDetected).length;
+    const botDetected = events.filter(e => e.botDetected).length;
+    
+    const countries = events.reduce((acc, event) => {
+      if (event.country) {
+        acc[event.country] = (acc[event.country] || 0) + 1;
+      }
+      return acc;
+    }, {});
 
-      const validCountryData = Object.entries(countryCounts)
-        .filter(([country, count]) => country && country !== 'Unknown' && count > 0)
-        .sort(([,a], [,b]) => b - a)
-        .slice(0, 8)
-        .map(([country, count]) => ({ 
-          name: country, 
-          value: count 
-        }));
+    const browsers = events.reduce((acc, event) => {
+      if (event.browser) {
+        acc[event.browser] = (acc[event.browser] || 0) + 1;
+      }
+      return acc;
+    }, {});
 
-      return {
-        type: 'bar',
-        data: validCountryData.length > 0 ? validCountryData : [{ name: 'No Data', value: 1 }],
-        title: 'Geographic Distribution by Country'
-      };
-    }
+    const topCountries = Object.entries(countries)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 5)
+      .map(([country, count]) => `${country}: ${count}`)
+      .join(', ');
 
-    if (lowerQuestion.includes('security') || lowerQuestion.includes('threat') || lowerQuestion.includes('vpn') || lowerQuestion.includes('bot')) {
-      const securityData = [
-        { name: 'VPN Detected', value: csvData.filter(e => e.vpnDetected).length },
-        { name: 'Bot Detected', value: csvData.filter(e => e.botDetected).length },
-        { name: 'Clean Requests', value: csvData.filter(e => !e.vpnDetected && !e.botDetected).length }
-      ];
+    const topBrowsers = Object.entries(browsers)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 5)
+      .map(([browser, count]) => `${browser}: ${count}`)
+      .join(', ');
 
-      return {
-        type: 'pie',
-        data: securityData.filter(item => item.value > 0),
-        title: 'Security Threat Analysis'
-      };
-    }
+    const dateRange = this.getDateRange(events);
 
-    if (lowerQuestion.includes('browser') || lowerQuestion.includes('device') || lowerQuestion.includes('os')) {
-      const browserCounts = csvData.reduce((acc, event) => {
-        const browser = event.browser || 'Unknown';
-        acc[browser] = (acc[browser] || 0) + 1;
-        return acc;
-      }, {});
-
-      const validBrowserData = Object.entries(browserCounts)
-        .filter(([browser, count]) => browser && browser !== 'Unknown' && count > 0)
-        .sort(([,a], [,b]) => b - a)
-        .slice(0, 8)
-        .map(([browser, count]) => ({ 
-          name: browser, 
-          value: count 
-        }));
-
-      return {
-        type: 'bar',
-        data: validBrowserData.length > 0 ? validBrowserData : [{ name: 'No Data', value: 1 }],
-        title: 'Browser Usage Distribution'
-      };
-    }
-
-    if (lowerQuestion.includes('chart') || lowerQuestion.includes('graph') || lowerQuestion.includes('visualize') || lowerQuestion.includes('show me')) {
-      const visitorCounts = csvData.reduce((acc, event) => {
-        acc[event.visitorId] = (acc[event.visitorId] || 0) + 1;
-        return acc;
-      }, {});
-
-      return {
-        type: 'bar',
-        data: Object.entries(visitorCounts)
-          .sort(([,a], [,b]) => b - a)
-          .slice(0, 8)
-          .map(([visitorId, count]) => ({ 
-            name: visitorId.slice(0, 8) + '...', 
-            value: count 
-          })),
-        title: 'Visitor Activity Overview'
-      };
-    }
-
-    return null;
+    return `Data Summary:
+- Total Events: ${totalEvents}
+- Unique Visitors: ${uniqueVisitors}
+- Date Range: ${dateRange}
+- Countries: ${uniqueCountries} (Top: ${topCountries})
+- Browsers: ${uniqueBrowsers} (Top: ${topBrowsers})
+- VPN Detected: ${vpnDetected} events
+- Bot Detected: ${botDetected} events
+- Average Events per Visitor: ${(totalEvents / uniqueVisitors).toFixed(2)}`;
   }
 
-  getStatus() {
-    this.initializeAI();
-    return {
-      provider: this.aiProvider,
-      isAvailable: this.isAIAvailable,
-      model: this.aiProvider === 'ollama' ? this.ollamaModel : 
-             this.aiProvider === 'openai' ? this.openaiModel : 'none'
-    };
+  getDateRange(events) {
+    if (!events || events.length === 0) return 'No data';
+    
+    const dates = events.map(e => new Date(e.date)).sort((a, b) => a - b);
+    const start = dates[0].toLocaleDateString();
+    const end = dates[dates.length - 1].toLocaleDateString();
+    
+    return `${start} to ${end}`;
+  }
+
+  performFallbackAnalysis(events, question) {
+    const summary = this.summarizeData(events);
+    
+    // Generate insights based on the data
+    const insights = this.generateFallbackInsights(events);
+    
+    return `Based on the analysis of your FingerprintJS data:
+
+${summary}
+
+Key Insights:
+${insights}
+
+This analysis was generated using our fallback system. For more detailed AI-powered insights, consider configuring Ollama or OpenAI.`;
+  }
+
+  generateFallbackInsights(events) {
+    const insights = [];
+    
+    const totalEvents = events.length;
+    const uniqueVisitors = new Set(events.map(e => e.visitorId).filter(Boolean)).size;
+    const vpnDetected = events.filter(e => e.vpnDetected).length;
+    const botDetected = events.filter(e => e.botDetected).length;
+    
+    // Geographic insights
+    const countries = events.reduce((acc, event) => {
+      if (event.country) {
+        acc[event.country] = (acc[event.country] || 0) + 1;
+      }
+      return acc;
+    }, {});
+    
+    const topCountry = Object.entries(countries)
+      .sort(([,a], [,b]) => b - a)[0];
+    
+    if (topCountry) {
+      insights.push(`• Geographic concentration: ${topCountry[0]} accounts for ${topCountry[1]} events (${((topCountry[1] / totalEvents) * 100).toFixed(1)}%)`);
+    }
+    
+    // Security insights
+    if (vpnDetected > 0) {
+      insights.push(`• Security alert: ${vpnDetected} events detected VPN usage (${((vpnDetected / totalEvents) * 100).toFixed(1)}%)`);
+    }
+    
+    if (botDetected > 0) {
+      insights.push(`• Security alert: ${botDetected} events detected bot activity (${((botDetected / totalEvents) * 100).toFixed(1)}%)`);
+    }
+    
+    // Behavioral insights
+    const eventsPerVisitor = totalEvents / uniqueVisitors;
+    if (eventsPerVisitor > 5) {
+      insights.push(`• High engagement: Average of ${eventsPerVisitor.toFixed(1)} events per visitor`);
+    }
+    
+    // Browser insights
+    const browsers = events.reduce((acc, event) => {
+      if (event.browser) {
+        acc[event.browser] = (acc[event.browser] || 0) + 1;
+      }
+      return acc;
+    }, {});
+    
+    const topBrowser = Object.entries(browsers)
+      .sort(([,a], [,b]) => b - a)[0];
+    
+    if (topBrowser) {
+      insights.push(`• Browser preference: ${topBrowser[0]} is most popular (${topBrowser[1]} events)`);
+    }
+    
+    return insights.join('\n');
+  }
+
+  generateFollowUpQuestions(response, events) {
+    const lowerResponse = response.toLowerCase();
+    const questions = [];
+    
+    if (lowerResponse.includes('security') || lowerResponse.includes('vpn') || lowerResponse.includes('bot')) {
+      questions.push("Show me detailed security threats");
+      questions.push("Analyze VPN usage patterns");
+      questions.push("Which browsers are most commonly used by bots?");
+      questions.push("How do device types correlate with security threats?");
+    } else {
+      questions.push("What are the most significant data patterns?");
+      questions.push("How do these insights compare to benchmarks?");
+    }
+    
+    if (lowerResponse.includes('geographic') || lowerResponse.includes('country') || lowerResponse.includes('location')) {
+      questions.push("Show me geographic distribution");
+      questions.push("Analyze location patterns");
+    } else if (lowerResponse.includes('visitor') || lowerResponse.includes('activity') || lowerResponse.includes('behavior')) {
+      questions.push("Show me visitor patterns");
+      questions.push("Analyze user behavior");
+    } else if (lowerResponse.includes('browser') || lowerResponse.includes('device') || lowerResponse.includes('technology')) {
+      questions.push("Show me browser usage");
+      questions.push("Analyze device patterns");
+    } else {
+      questions.push("Show me data patterns");
+      questions.push("Analyze insights");
+    }
+
+    return questions.slice(0, 2);
   }
 
   async generateSmartInsight(events) {
     try {
-      const recentEvents = events.slice(-100);
+      // Use all events for analysis (10,847 events from Elvo CSV)
+      const recentEvents = events;
+      
+      console.log(`Processing ${recentEvents.length} events for smart insight generation`);
       
       if (recentEvents.length === 0) {
         return {
@@ -490,7 +399,9 @@ Top Visitors: ${mostActiveVisitors.map(([v, n]) => `${v.slice(0,6)}(${n})`).join
         };
       }
 
+      // Generate a smart insight question based on the data
       const insightQuestion = this.generateInsightQuestion(recentEvents);
+      
       const result = await this.analyzeData(recentEvents, insightQuestion);
       
       if (result.success && result.answer) {

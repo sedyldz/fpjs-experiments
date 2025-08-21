@@ -140,4 +140,79 @@
   .chat-markdown .task-list-item input[type="checkbox"] {
     @apply mr-2;
   }
+  
+  /* Custom styles for smart insight markdown content */
+  .prose-sm {
+    @apply text-sm leading-relaxed;
+  }
+  
+  .prose-sm h1,
+  .prose-sm h2,
+  .prose-sm h3,
+  .prose-sm h4,
+  .prose-sm h5,
+  .prose-sm h6 {
+    @apply font-semibold mb-2 mt-3 text-gray-900;
+  }
+  
+  .prose-sm h1 {
+    @apply text-lg;
+  }
+  
+  .prose-sm h2 {
+    @apply text-base;
+  }
+  
+  .prose-sm h3,
+  .prose-sm h4,
+  .prose-sm h5,
+  .prose-sm h6 {
+    @apply text-sm;
+  }
+  
+  .prose-sm p {
+    @apply mb-2 text-gray-800;
+  }
+  
+  .prose-sm ul,
+  .prose-sm ol {
+    @apply mb-2 pl-4 text-gray-800;
+  }
+  
+  .prose-sm li {
+    @apply mb-1;
+  }
+  
+  .prose-sm strong {
+    @apply font-semibold text-gray-900;
+  }
+  
+  .prose-sm em {
+    @apply italic text-gray-700;
+  }
+  
+  .prose-sm code {
+    @apply bg-gray-100 px-1 py-0.5 rounded text-xs font-mono text-gray-800;
+  }
+  
+  .prose-sm blockquote {
+    @apply border-l-4 border-orange-300 pl-4 italic text-gray-600 bg-orange-50 py-2 rounded-r;
+  }
+  
+  .prose-sm table {
+    @apply w-full border-collapse border border-gray-300 mb-3 text-xs;
+  }
+  
+  .prose-sm th,
+  .prose-sm td {
+    @apply border border-gray-300 px-2 py-1 text-left;
+  }
+  
+  .prose-sm th {
+    @apply bg-gray-100 font-semibold text-gray-900;
+  }
+  
+  .prose-sm tr:nth-child(even) {
+    @apply bg-gray-50;
+  }
 }

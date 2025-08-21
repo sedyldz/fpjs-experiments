@@ -1,15 +1,17 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import aiService from './src/services/aiService.js';
 
 dotenv.config();
+
+import aiService from './src/services/aiService.js';
 
 const app = express();
 const PORT = 3001;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // FingerprintJS API endpoint to get events
 app.get('/api/events', async (req, res) => {
@@ -327,6 +329,8 @@ app.post('/api/smart-insight', async (req, res) => {
   try {
     const { events } = req.body;
     
+    console.log(`Smart insight request received with ${events?.length || 0} events`);
+    
     if (!events || !Array.isArray(events)) {
       return res.status(400).json({
         success: false,
@@ -334,8 +338,14 @@ app.post('/api/smart-insight', async (req, res) => {
       });
     }
 
+    // Set a longer timeout for large datasets
+    req.setTimeout(300000); // 5 minutes
+    res.setTimeout(300000); // 5 minutes
+
     // Generate smart insight using the AI service
     const result = await aiService.generateSmartInsight(events);
+    
+    console.log('Smart insight generated successfully');
     
     res.json({
       success: true,

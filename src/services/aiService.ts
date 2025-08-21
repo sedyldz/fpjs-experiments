@@ -229,13 +229,13 @@ Analyze the data. ${requiresChart ? 'Include chart data.' : 'Be concise.'}`;
 
     } catch (error) {
       console.error('AI analysis error:', error);
-      console.error('AI analysis error stack:', error.stack);
+      console.error('AI analysis error stack:', (error as Error).stack);
       const fallbackChart = this.generateFallbackChart(csvData, originalQuestion);
       const fallbackAnswer = this.generateFallbackAnswer(csvData, originalQuestion);
       
       return {
         success: false,
-        error: error.message,
+        error: (error as Error).message,
         answer: fallbackAnswer || 'Analysis completed with fallback data.',
         chart: fallbackChart,
         provider: 'fallback'
@@ -289,7 +289,7 @@ Analyze the data. ${requiresChart ? 'Include chart data.' : 'Be concise.'}`;
         throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as any;
       console.log('AI Service: Ollama response data keys:', Object.keys(data));
       console.log('AI Service: Ollama analysis successful');
       
@@ -298,8 +298,8 @@ Analyze the data. ${requiresChart ? 'Include chart data.' : 'Be concise.'}`;
       return content.trim();
     } catch (error) {
       console.error('Ollama analysis error:', error);
-      console.error('Ollama analysis error stack:', error.stack);
-      throw new Error(`Ollama analysis failed: ${error.message}`);
+      console.error('Ollama analysis error stack:', (error as Error).stack);
+      throw new Error(`Ollama analysis failed: ${(error as Error).message}`);
     }
   }
 
@@ -312,13 +312,12 @@ Analyze the data. ${requiresChart ? 'Include chart data.' : 'Be concise.'}`;
 
       // Use streaming for faster response
       const response = await this.chatModel!.invoke(messages, {
-        timeout: 15000,
-        maxRetries: 1
+        timeout: 15000
       });
-      return response.content;
+      return response.content as string;
     } catch (error) {
       console.error('OpenAI analysis error:', error);
-      throw new Error(`OpenAI analysis failed: ${error.message}`);
+      throw new Error(`OpenAI analysis failed: ${(error as Error).message}`);
     }
   }
 
@@ -326,6 +325,11 @@ Analyze the data. ${requiresChart ? 'Include chart data.' : 'Be concise.'}`;
   prepareDataSummary(csvData: FingerprintEvent[]): string {
     if (!csvData || csvData.length === 0) {
       return "No data available for analysis.";
+    }
+
+    // Only provide detailed data summary if events number is more than 100
+    if (csvData.length <= 100) {
+      return `Limited data available (${csvData.length} events). Detailed analysis requires more than 100 events for meaningful insights.`;
     }
 
     // Debug: Log data structure to help identify issues
@@ -500,6 +504,11 @@ Top Visitors: ${mostActiveVisitors.map(([v, n]) => `${v.slice(0,6)}(${n})`).join
       return "No data available.";
     }
 
+    // Only provide data summary if events number is more than 100
+    if (csvData.length <= 100) {
+      return `Limited data available (${csvData.length} events). Detailed analysis requires more than 100 events.`;
+    }
+
     const totalEvents = csvData.length;
     const uniqueVisitors = new Set(csvData.map(e => e.visitorId)).size;
     const vpnDetected = csvData.filter(e => e.vpnDetected).length;
@@ -665,11 +674,133 @@ Top Visitors: ${mostActiveVisitors.map(([v, n]) => `${v.slice(0,6)}(${n})`).join
     };
   }
 
+  // Generate follow-up questions based on AI response
+  async generateFollowUpQuestions(
+    aiResponse: string, 
+    csvData: FingerprintEvent[], 
+    conversationHistory: any[] = [], 
+    chatCache: string = '', 
+    isDeeper: boolean = false
+  ): Promise<string[]> {
+    try {
+      if (!this.isAIAvailable) {
+        console.log('AI Service: AI not available, using fallback follow-up questions');
+        return this.generateFallbackFollowUpQuestions(aiResponse, csvData, isDeeper);
+      }
+
+      const systemPrompt = `You are an AI assistant that generates contextual follow-up questions based on data analysis responses.
+
+IMPORTANT: Generate exactly 2 follow-up questions that are:
+1. Relevant to the analysis just provided
+2. Specific and actionable
+3. Different from each other
+4. Focused on deeper insights or related areas
+
+${isDeeper ? 'Generate deeper, more specific questions that explore the analysis further.' : 'Generate initial follow-up questions that explore related areas.'}
+
+RESPOND WITH ONLY THE 2 QUESTIONS, ONE PER LINE, NO ADDITIONAL TEXT.`;
+
+      const userPrompt = `Based on this AI analysis response: "${aiResponse}"
+
+Generate 2 follow-up questions.`;
+
+      let response;
+      if (this.aiProvider === 'ollama') {
+        response = await this.analyzeWithOllama(systemPrompt, userPrompt);
+      } else if (this.aiProvider === 'openai') {
+        response = await this.analyzeWithOpenAI(systemPrompt, userPrompt);
+      } else {
+        throw new Error('No AI provider configured');
+      }
+
+      // Parse the response to extract questions
+      const questions = response
+        .split('\n')
+        .map(q => q.trim())
+        .filter(q => q.length > 0 && !q.startsWith('1.') && !q.startsWith('2.'))
+        .slice(0, 2);
+
+      if (questions.length >= 2) {
+        return questions;
+      } else {
+        // Fallback if AI doesn't generate enough questions
+        return this.generateFallbackFollowUpQuestions(aiResponse, csvData, isDeeper);
+      }
+
+    } catch (error) {
+      console.error('Error generating follow-up questions:', error);
+      return this.generateFallbackFollowUpQuestions(aiResponse, csvData, isDeeper);
+    }
+  }
+
+  // Generate fallback follow-up questions when AI is unavailable
+  generateFallbackFollowUpQuestions(aiResponse: string, csvData: FingerprintEvent[], isDeeper: boolean = false): string[] {
+    const lowerResponse = aiResponse.toLowerCase();
+    const questions = [];
+
+    if (isDeeper) {
+      // Deeper, more specific questions
+      if (lowerResponse.includes('security') || lowerResponse.includes('vpn') || lowerResponse.includes('bot') || lowerResponse.includes('threat')) {
+        questions.push("What specific security measures should I implement?");
+        questions.push("How do these threats compare to industry averages?");
+      }
+      
+      else if (lowerResponse.includes('geographic') || lowerResponse.includes('country') || lowerResponse.includes('location')) {
+        questions.push("Which regions show unusual activity patterns?");
+        questions.push("How does geographic distribution affect security?");
+      }
+      
+      else if (lowerResponse.includes('visitor') || lowerResponse.includes('activity') || lowerResponse.includes('behavior')) {
+        questions.push("Which visitors show suspicious behavior patterns?");
+        questions.push("How do visitor patterns change over time?");
+      }
+      
+      else if (lowerResponse.includes('browser') || lowerResponse.includes('device') || lowerResponse.includes('technology')) {
+        questions.push("Which browsers are most commonly used by bots?");
+        questions.push("How do device types correlate with security threats?");
+      }
+      
+      else {
+        questions.push("What are the most significant data patterns?");
+        questions.push("How do these insights compare to benchmarks?");
+      }
+    } else {
+      // Initial, broader questions
+      if (lowerResponse.includes('security') || lowerResponse.includes('vpn') || lowerResponse.includes('bot') || lowerResponse.includes('threat')) {
+        questions.push("Show me security threats");
+        questions.push("Analyze VPN patterns");
+      }
+      
+      else if (lowerResponse.includes('geographic') || lowerResponse.includes('country') || lowerResponse.includes('location')) {
+        questions.push("Show geographic distribution");
+        questions.push("Analyze location patterns");
+      }
+      
+      else if (lowerResponse.includes('visitor') || lowerResponse.includes('activity') || lowerResponse.includes('behavior')) {
+        questions.push("Show visitor patterns");
+        questions.push("Analyze user behavior");
+      }
+      
+      else if (lowerResponse.includes('browser') || lowerResponse.includes('device') || lowerResponse.includes('technology')) {
+        questions.push("Show browser usage");
+        questions.push("Analyze device patterns");
+      }
+      
+      else {
+        questions.push("Show data patterns");
+        questions.push("Analyze insights");
+      }
+    }
+
+    return questions.slice(0, 2);
+  }
+
   // Generate smart insight for overview page
   async generateSmartInsight(events: FingerprintEvent[]): Promise<{ insight: string; loading: boolean; error?: string }> {
     try {
-      // Take the last 100 events for analysis
-      const recentEvents = events.slice(-100);
+      const recentEvents = events;
+      
+      console.log(`Processing ${recentEvents.length} events for smart insight generation`);
       
       if (recentEvents.length === 0) {
         return {
@@ -678,23 +809,13 @@ Top Visitors: ${mostActiveVisitors.map(([v, n]) => `${v.slice(0,6)}(${n})`).join
         };
       }
 
-      // Generate a smart insight question based on the data
-      const insightQuestion = this.generateInsightQuestion(recentEvents);
+      // Generate a concise fraud-focused insight
+      const insight = await this.generateConciseFraudInsight(recentEvents);
       
-      const result = await this.analyzeData(recentEvents, insightQuestion);
-      
-      if (result.success && result.answer) {
-        return {
-          insight: result.answer,
-          loading: false
-        };
-      } else {
-        return {
-          insight: result.answer || "Unable to generate insight at this time.",
-          loading: false,
-          error: result.error
-        };
-      }
+      return {
+        insight: insight,
+        loading: false
+      };
     } catch (error) {
       console.error('Error generating smart insight:', error);
       return {
@@ -703,6 +824,132 @@ Top Visitors: ${mostActiveVisitors.map(([v, n]) => `${v.slice(0,6)}(${n})`).join
         error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
+  }
+
+  // Generate a concise fraud-focused insight
+  private async generateConciseFraudInsight(events: FingerprintEvent[]): Promise<string> {
+    try {
+      // Only provide detailed analysis if events number is more than 100
+      if (events.length <= 100) {
+        // Pass events directly for small datasets
+        const userPrompt = `Analyze this small FingerprintJS dataset (${events.length} events) and provide a 1-2 sentence high-level security overview:
+
+${JSON.stringify(events, null, 2)}
+
+Focus on the single most critical security finding.`;
+
+        const systemPrompt = `You are a fraud detection specialist. You MUST provide ONLY 1-2 sentences maximum.
+
+CRITICAL: Keep your response extremely short and focused. Do NOT write paragraphs or detailed analysis.
+
+Format: One sentence with the key security finding, optionally followed by one sentence with the most important metric.
+
+Example: "**5 VPN detections** found in your traffic, representing 2.5% of total events."
+
+Focus on the single most critical finding:
+- VPN/bot detection counts and percentages
+- Geographic anomalies
+- Suspicious patterns
+- Overall risk level
+
+Use **bold** for the key metric. Keep it under 50 words total.`;
+
+        let response;
+        if (this.aiProvider === 'ollama') {
+          response = await this.analyzeWithOllama(systemPrompt, userPrompt);
+        } else if (this.aiProvider === 'openai') {
+          response = await this.analyzeWithOpenAI(systemPrompt, userPrompt);
+        } else {
+          // Fallback to rule-based insight
+          return this.generateFallbackFraudInsight(events);
+        }
+
+        return response.trim();
+      }
+
+      // Calculate key fraud indicators for larger datasets
+      const totalEvents = events.length;
+      const uniqueVisitors = new Set(events.map(e => e.visitorId)).size;
+      const vpnDetected = events.filter(e => e.vpnDetected).length;
+      const botDetected = events.filter(e => e.botDetected).length;
+      const lowConfidence = events.filter(e => e.confidence < 0.5).length;
+      const uniqueCountries = new Set(events.map(e => e.country).filter(Boolean)).size;
+      
+      // Create a focused system prompt for very concise fraud insights
+      const systemPrompt = `You are a fraud detection specialist. You MUST provide ONLY 1-2 sentences maximum.
+
+CRITICAL: Keep your response extremely short and focused. Do NOT write paragraphs or detailed analysis.
+
+Format: One sentence with the key security finding, optionally followed by one sentence with the most important metric.
+
+Example: "**5 VPN detections** found in your traffic, representing 2.5% of total events."
+
+Focus on the single most critical finding:
+- VPN/bot detection counts and percentages
+- Geographic anomalies
+- Suspicious patterns
+- Overall risk level
+
+Use **bold** for the key metric. Keep it under 50 words total.`;
+
+      const dataSummary = `
+Total Events: ${totalEvents}
+Unique Visitors: ${uniqueVisitors}
+VPN Detected: ${vpnDetected} (${((vpnDetected/totalEvents)*100).toFixed(1)}%)
+Bot Detected: ${botDetected} (${((botDetected/totalEvents)*100).toFixed(1)}%)
+Low Confidence (<0.5): ${lowConfidence} (${((lowConfidence/totalEvents)*100).toFixed(1)}%)
+Countries: ${uniqueCountries}
+`;
+
+      const userPrompt = `Analyze this FingerprintJS data and provide a 1-2 sentence high-level security overview:
+
+${dataSummary}
+
+Focus on the single most critical security finding.`;
+
+      let response;
+      if (this.aiProvider === 'ollama') {
+        response = await this.analyzeWithOllama(systemPrompt, userPrompt);
+      } else if (this.aiProvider === 'openai') {
+        response = await this.analyzeWithOpenAI(systemPrompt, userPrompt);
+      } else {
+        // Fallback to rule-based insight
+        return this.generateFallbackFraudInsight(events);
+      }
+
+      return response.trim();
+    } catch (error) {
+      console.error('Error generating concise fraud insight:', error);
+      return this.generateFallbackFraudInsight(events);
+    }
+  }
+
+  // Generate fallback fraud insight when AI is unavailable
+  private generateFallbackFraudInsight(events: FingerprintEvent[]): string {
+    const totalEvents = events.length;
+    const uniqueVisitors = new Set(events.map(e => e.visitorId)).size;
+    const vpnDetected = events.filter(e => e.vpnDetected).length;
+    const botDetected = events.filter(e => e.botDetected).length;
+    const lowConfidence = events.filter(e => e.confidence < 0.5).length;
+    const uniqueCountries = new Set(events.map(e => e.country).filter(Boolean)).size;
+    
+    // Find the most critical security finding
+    if (vpnDetected > 0 || botDetected > 0) {
+      const totalThreats = vpnDetected + botDetected;
+      const threatPercentage = ((totalThreats/totalEvents)*100).toFixed(1);
+      return `**${totalThreats} security threats detected** (${threatPercentage}% of traffic) - ${vpnDetected} VPN and ${botDetected} bot detections.`;
+    }
+    
+    if (lowConfidence > 0) {
+      const lowConfPercentage = ((lowConfidence/totalEvents)*100).toFixed(1);
+      return `**${lowConfidence} low confidence events** (${lowConfPercentage}%) detected, indicating potential suspicious activity.`;
+    }
+    
+    if (uniqueCountries > 3) {
+      return `**${uniqueCountries} countries** detected across ${totalEvents} events, suggesting broad geographic distribution.`;
+    }
+    
+    return `**No immediate fraud indicators** detected in ${totalEvents} events from ${uniqueVisitors} visitors.`;
   }
 
   // Generate an appropriate insight question based on the data

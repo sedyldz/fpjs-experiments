@@ -67,7 +67,7 @@ app.post('/api/ai/analyze-with-followup', async (req, res) => {
 });
 ```
 
-### 3. AI Service Enhancements (`src/services/aiService.js`)
+### 3. AI Service Enhancements (`src/services/aiService.ts`)
 
 The existing `generateFollowUpQuestions()` method is now used in the combined endpoint, providing:
 - Contextual questions based on the AI response content

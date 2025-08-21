@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chart Data Test</title>
+</head>
+<body>
+    <h1>Chart Data Test</h1>
+    <div id="status">Loading...</div>
+    <div id="data"></div>
+
+    <script>
+        async function testChartData() {
+            try {
+                const response = await fetch('/elvo.csv');
+                if (!response.ok) {
+                    throw new Error(`Failed to load Elvo CSV: ${response.status}`);
+                }
+                
+                const csvText = await response.text();
+                const lines = csvText.trim().split('\n');
+                const headers = lines[0].split(',');
+                const data = lines.slice(1).map(line => {
+                    const values = line.split(',');
+                    const row = {};
+                    headers.forEach((header, index) => {
+                        row[header] = values[index] || '';
+                    });
+                    return row;
+                });
+
+                // Transform data to match the expected format
+                const events = data.map(row => ({
+                    visitorId: row.visitorId || '',
+                    ipAddress: row.ip || '',
+                    requestId: row.requestId || '',
+                    date: new Date(row.time || row.timestamp || ''),
+                    browser: row['browserDetails.browserName'] || '',
+                    os: row['browserDetails.os'] || '',
+                    country: row['ipLocation.country.name'] || '',
+                    city: row['ipLocation.city.name'] || '',
+                    confidence: parseFloat(row['confidence.score']) || 0,
+                    vpnDetected: row['vpn.result'] === 'true' || false,
+                    botDetected: row['bot.result'] === 'detected' || false,
+                    linkedId: row.linkedId || '',
+                    url: row.url || '',
+                    userAgent: row.userAgent || '',
+                    suspectScore: parseFloat(row['suspectScore.result']) || 0
+                }));
+
+                // Generate chart data similar to the Overview component
+                const now = new Date();
+                const chartData = [];
+                
+                // Group events by date
+                const eventsByDate = events.reduce((acc, event) => {
+                    const eventDate = new Date(event.date);
+                    const dateKey = eventDate.toDateString();
+                    acc[dateKey] = (acc[dateKey] || 0) + 1;
+                    return acc;
+                }, {});
+                
+                // Calculate average daily usage
+                const totalEvents = events.length;
+                const averageDailyUsage = Math.max(10, Math.floor(totalEvents / 7));
+                
+                for (let i = 6; i >= 0; i--) {
+                    const date = new Date(now);
+                    date.setDate(date.getDate() - i);
+                    const dateKey = date.toDateString();
+                    
+                    const currentUsage = eventsByDate[dateKey] || Math.floor(averageDailyUsage * (0.5 + Math.random() * 0.5));
+                    const variation = 0.7 + (Math.sin(i * 0.5) * 0.3);
+                    const previousUsage = Math.floor(currentUsage * variation);
+                    
+                    chartData.push({
+                        date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                        current: currentUsage,
+                        previous: previousUsage,
+                    });
+                }
+
+                document.getElementById('status').innerHTML = `✅ Chart data generated successfully!`;
+                document.getElementById('data').innerHTML = `
+                    <h3>Chart Data Analysis:</h3>
+                    <p><strong>Total Events:</strong> ${events.length}</p>
+                    <p><strong>Average Daily Usage:</strong> ${averageDailyUsage}</p>
+                    <p><strong>Date Range:</strong> ${new Date(Math.min(...events.map(e => e.date))).toLocaleDateString()} to ${new Date(Math.max(...events.map(e => e.date))).toLocaleDateString()}</p>
+                    
+                    <h4>Generated Chart Data:</h4>
+                    <table border="1" style="border-collapse: collapse; margin: 10px 0;">
+                        <tr><th>Date</th><th>Current</th><th>Previous</th></tr>
+                        ${chartData.map(item => `
+                            <tr>
+                                <td style="padding: 5px;">${item.date}</td>
+                                <td style="padding: 5px;">${item.current}</td>
+                                <td style="padding: 5px;">${item.previous}</td>
+                            </tr>
+                        `).join('')}
+                    </table>
+                    
+                    <h4>Events by Date (Last 7 days):</h4>
+                    <ul>
+                        ${Object.entries(eventsByDate).slice(-7).map(([date, count]) => `
+                            <li>${new Date(date).toLocaleDateString()}: ${count} events</li>
+                        `).join('')}
+                    </ul>
+                `;
+            } catch (error) {
+                document.getElementById('status').innerHTML = `❌ Error: ${error.message}`;
+            }
+        }
+
+        testChartData();
+    </script>
+</body>
+</html>
